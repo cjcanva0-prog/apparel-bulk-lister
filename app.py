@@ -8,9 +8,8 @@ import io
 
 DB_FILE = "catalog_db.json"
 
-st.set_page_config(page_title="Apparel Catalog & Listing Hub", layout="wide")
+st.set_page_config(page_title="Apparel Multi-Marketplace Hub", layout="wide")
 
-# Helper functions for database
 def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
@@ -26,7 +25,6 @@ def save_db(data):
 
 db = load_db()
 
-# Controlled Vocabulary Lists
 DROPDOWNS = {
     "colors": ["White", "Black", "Multi", "Off White", "Navy Blue", "Mustard", "Pink", "Red", "Green", "Yellow", "Maroon", "Beige", "Purple", "Grey", "Teal", "Coral", "Other / Custom..."],
     "fabrics": ["Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette", "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend", "Other / Custom..."],
@@ -44,7 +42,7 @@ DROPDOWNS = {
 st.title("👗 Apparel Catalog & Multi-Marketplace Hub")
 
 # ==============================================================================
-# 1. CATALOG MANAGEMENT TOOLBAR
+# 1. CATALOG MANAGEMENT
 # ==============================================================================
 col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
 with col_t1:
@@ -57,7 +55,7 @@ with col_t3:
     if st.button("🗑️ Delete Selected", use_container_width=True):
         st.session_state["trigger_delete"] = True
 
-# Form for Add / Edit Product
+# Add / Edit Form Drawer
 if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_product_key", None):
     edit_key = st.session_state.get("edit_product_key", None)
     is_edit = edit_key is not None and edit_key in db
@@ -70,10 +68,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
         with f1:
             st.markdown("### 🏷️ Basic Identifiers")
             d_code = st.text_input("Design Code / Model Name*", value=curr_data.get("design_code", "NewStyle"))
-            st.caption("💡 *Common:* Asmita, Supriya, Eva, Maya, Riha")
-            
             t_core = st.text_input("Core Title (Without Brand)*", value=curr_data.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants"))
-            st.caption("💡 *Common:* Floral Cotton Embroidered Kurta Set with Pants")
 
             c_def = curr_data.get("color", "White")
             clr_idx = DROPDOWNS["colors"].index(c_def) if c_def in DROPDOWNS["colors"] else len(DROPDOWNS["colors"]) - 1
@@ -140,12 +135,12 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
 
             sz_list = st.multiselect(
                 "Available Sizes*", 
-                ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"], 
+                ["XS", "S", "M", "L", "XL", "2XL", "3XL"], 
                 default=curr_data.get("sizes", ["S", "M", "L", "XL", "2XL"])
             )
 
         st.markdown("---")
-        desc = st.text_area("Product Description", value=curr_data.get("description", "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch."))
+        desc = st.text_area("Product Description", value=curr_data.get("description", "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day."))
         img_urls = st.text_area("Image URLs (1 link per line)", value="\n".join(curr_data.get("images", [])))
 
         save_c1, save_c2 = st.columns([1, 4])
@@ -238,7 +233,6 @@ else:
 
     selected_designs = edited_df[edited_df["Select"] == True]["Design Code"].tolist()
     
-    # Handle Deletion
     if st.session_state.get("trigger_delete", False):
         if not selected_designs:
             st.warning("Please tick the checkbox next to the product(s) you want to delete.")
@@ -251,7 +245,6 @@ else:
             st.success(f"Deleted {len(selected_designs)} product(s) from catalog.")
             st.rerun()
 
-    # Edit button for single selection
     if len(selected_designs) == 1:
         if st.button(f"✏️ Edit Selected ({selected_designs[0]})"):
             st.session_state["edit_product_key"] = selected_designs[0]
@@ -261,21 +254,21 @@ else:
     st.markdown("---")
 
     # ==============================================================================
-    # 3. LISTING HUB (TRIGGERED FOR SELECTED PRODUCTS)
+    # 3. LISTING HUB (AUTOMATED PARENT-CHILD & TEMPLATE GENERATION)
     # ==============================================================================
     st.subheader("🚀 List Selected Products")
     
     if not selected_designs:
         st.write("👈 *Tick one or more products in the catalog table above to configure and generate listing files.*")
     else:
-        st.success(f"Ready to list **{len(selected_designs)}** product(s): **{', '.join(selected_designs)}**")
+        st.success(f"Selected **{len(selected_designs)}** product(s): **{', '.join(selected_designs)}**")
         
         c_plat, c_brand, c_tpl = st.columns([1.5, 2, 2.5])
         
         with c_plat:
             marketplace = st.selectbox("Select Target Marketplace", ["Myntra", "Amazon.in"])
             default_cat = "Kurta Sets" if marketplace == "Myntra" else "KURTA"
-            category_val = st.text_input("Category / Feed Type", value=default_cat)
+            category_val = st.text_input("Category / Product Type", value=default_cat)
 
         with c_brand:
             if marketplace == "Myntra":
@@ -299,11 +292,10 @@ else:
 
         if st.button(f"⚡ Generate {marketplace} Bulk Upload File for {len(selected_designs)} Product(s)", type="primary", use_container_width=True):
             if not uploaded_template:
-                st.error("Please upload the latest template file.")
+                st.error("Please upload the marketplace template file.")
             elif not selected_brands:
                 st.error("Please select at least one brand.")
             else:
-                # DYNAMIC FILE EXTENSION & MACRO HANDLING
                 is_xlsm = uploaded_template.name.lower().endswith(".xlsm")
                 keep_vba_flag = True if is_xlsm else False
                 out_ext = ".xlsm" if is_xlsm else ".xlsx"
@@ -311,7 +303,7 @@ else:
 
                 wb = openpyxl.load_workbook(uploaded_template, keep_vba=keep_vba_flag)
                 
-                # Target Sheet Detection
+                # Sheet Detection
                 if marketplace == "Myntra":
                     sheet_name = "Kurta Sets" if "set" in category_val.lower() else "Kurtas"
                     ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
@@ -319,15 +311,24 @@ else:
                     start_row = 4
                 else:
                     ws = wb["Template"] if "Template" in wb.sheetnames else wb.active
-                    header_row = 4
-                    start_row = 6
+                    header_row = 4  # Human-readable header row in Amazon template
+                    start_row = 6  # Data starts at row 6/7
 
-                # Dynamic column mapping
+                # Build column mapping from headers
                 col_map = {}
                 for c in range(1, ws.max_column + 1):
                     h_val = ws.cell(row=header_row, column=c).value
                     if h_val:
-                        col_map[str(h_val).strip()] = c
+                        col_name_clean = str(h_val).strip()
+                        if col_name_clean not in col_map:
+                            col_map[col_name_clean] = []
+                        col_map[col_name_clean].append(c)
+
+                def write_cell(row_idx, col_name, value, occurrence=0):
+                    if col_name in col_map and value is not None:
+                        cols = col_map[col_name]
+                        if occurrence < len(cols):
+                            ws.cell(row=row_idx, column=cols[occurrence], value=value)
 
                 current_row = start_row
                 group_id_counter = 1
@@ -336,26 +337,96 @@ else:
                     prod = db[d_name]
                     
                     for brand in selected_brands:
+                        # ------------------------------------------------------
+                        # AMAZON: PARENT ROW GENERATION FIRST
+                        # ------------------------------------------------------
+                        if marketplace == "Amazon.in":
+                            parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
+                            parent_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} {prod.get('top_pattern', 'Printed')} Kurta Pant Set ({prod.get('design_code')})"
+                            
+                            p_row = {
+                                "Status": "Active",
+                                "Title": parent_title,
+                                "SKU": parent_sku,
+                                "Product Type": category_val.upper(),
+                                "Listing Action": "Create or Replace (Full Update)",
+                                "Parentage Level": "Parent",
+                                "Variation Theme Name": "SIZE/COLOR",
+                                "Item Name": parent_title,
+                                "Brand Name": brand,
+                                "Product Id Type": "GTIN Exempt",
+                                "Model Name": prod.get("design_code"),
+                                "Manufacturer": "Pervas, Surat, Gujarat - 395010",
+                                "Product Description": prod.get("description"),
+                                "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
+                                "Lifestyle": "Casual",
+                                "Department Name": "Womens",
+                                "Target Gender": "Female",
+                                "Age Range Description": "Adult",
+                                "Fabric Type": prod.get("fabric", "Cotton"),
+                                "Material": prod.get("fabric", "Cotton"),
+                                "Item Type Name": category_val.upper(),
+                                "Item Length Description": "Knee Length",
+                                "Occasion": prod.get("occasion", "Festive"),
+                                "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
+                                "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                "Packer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                "Design Name": prod.get("top_pattern", "Embroidered"),
+                                "Neck Style": prod.get("neck", "V-Neck"),
+                                "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
+                                "Weave Method": "Powerloom",
+                                "Item Weight": 450.0,
+                                "Item Weight Unit": "Grams",
+                                "Country of Origin": "India",
+                                "Skip Offer": "No",
+                                "Item Condition": "New",
+                                "Offer Condition Note": "New"
+                            }
+
+                            for col_name, val in p_row.items():
+                                write_cell(current_row, col_name, val)
+
+                            # Populate images and bullets for parent
+                            imgs = prod.get("images", [])
+                            if imgs:
+                                write_cell(current_row, "Main Image URL", imgs[0])
+                                for i_idx, img_url in enumerate(imgs[1:8]):
+                                    write_cell(current_row, "Other Image URL", img_url, occurrence=i_idx)
+
+                            write_cell(current_row, "Bullet Point", "1. Elegant Design: Features sophisticated embroidery and styling for everyday and festive elegance.", occurrence=0)
+                            write_cell(current_row, "Bullet Point", "2. Soft & Breathable Fabric: Crafted from lightweight fabric offering all-day comfort.", occurrence=1)
+                            write_cell(current_row, "Bullet Point", "3. Versatile Occasion: Ideal for casual outings, office wear, family gatherings, and celebrations.", occurrence=2)
+                            write_cell(current_row, "Bullet Point", "4. Easy Care & Lasting Style: Durable stitching and long-lasting fabric quality.", occurrence=3)
+
+                            current_row += 1
+
+                        # ------------------------------------------------------
+                        # CHILD ROWS GENERATION (AMAZON & MYNTRA)
+                        # ------------------------------------------------------
                         for sz in prod.get("sizes", []):
-                            std_size = "XXL" if sz == "2XL" else sz
-                            sku = f"{brand}-P-{prod.get('design_code')}-{sz}"
-                            art_num = f"{brand}-P-{prod.get('design_code')}"
-                            display_name = f"{brand} {prod.get('color', '')} {prod.get('title_core', '')}"
+                            # Size Standardization: Amazon uses '2XL', Myntra uses 'XXL'
+                            amz_size = "2XL" if sz.upper() in ["2XL", "XXL"] else sz
+                            myntra_size = "XXL" if sz.upper() in ["2XL", "XXL"] else sz
+
                             m = prod.get("measurements", {}).get(sz, {})
 
                             if marketplace == "Myntra":
-                                row_dict = {
+                                sku = f"{brand}-P-{prod.get('design_code')}-{myntra_size}"
+                                art_num = f"{brand}-P-{prod.get('design_code')}"
+                                display_name = f"{brand} {prod.get('color', '')} {prod.get('title_core', '')}"
+                                
+                                m_row = {
                                     "styleGroupId": group_id_counter,
                                     "vendorSkuCode": sku,
                                     "vendorArticleNumber": art_num,
                                     "vendorArticleName": display_name,
                                     "brand": brand,
-                                    "Manufacturer Name and Address with Pincode": "Pervas, Surat, Gujarat - 395010",
-                                    "Packer Name and Address with Pincode": "Pervas, Surat, Gujarat - 395010",
+                                    "Manufacturer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
+                                    "Packer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
                                     "Country Of Origin": "India",
                                     "articleType": category_val,
-                                    "Brand Size": std_size,
-                                    "Standard Size": std_size,
+                                    "Brand Size": myntra_size,
+                                    "Standard Size": myntra_size,
                                     "is Standard Size present on Label": "Yes",
                                     "Brand Colour (Remarks)": prod.get("color"),
                                     "HSN": prod.get("hsn"),
@@ -391,32 +462,97 @@ else:
                                     "Waist ( Inches )": m.get("Waist"),
                                     "Inseam Length ( Inches )": m.get("Inseam Length")
                                 }
+                                for col_name, val in m_row.items():
+                                    write_cell(current_row, col_name, val)
+
                             else:
-                                row_dict = {
-                                    "SKU": sku,
+                                # AMAZON CHILD ROW
+                                child_sku = f"{brand}-{prod.get('design_code')}-{prod.get('color', 'Clr')}-{amz_size}"
+                                parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
+                                child_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} Kurta Pant Set ({prod.get('design_code')} {prod.get('color', '')} {amz_size})"
+                                
+                                c_row = {
+                                    "Status": "Active",
+                                    "Title": child_title,
+                                    "SKU": child_sku,
                                     "Product Type": category_val.upper(),
                                     "Listing Action": "Create or Replace (Full Update)",
                                     "Parentage Level": "Child",
-                                    "Parent SKU": f"{brand}-{prod.get('design_code')}",
+                                    "Parent SKU": parent_sku,
                                     "Variation Theme Name": "SIZE/COLOR",
-                                    "Item Name": display_name,
+                                    "Item Name": child_title,
                                     "Brand Name": brand,
                                     "Product Id Type": "GTIN Exempt",
-                                    "Apparel Size Value": sz,
+                                    "Model Name": prod.get("design_code"),
+                                    "Part Number": prod.get("design_code"),
+                                    "Apparel Size System": "IN",
+                                    "Apparel Size Class": "Alpha",
+                                    "Apparel Size Value": amz_size,
+                                    "Shirt Size System": "IN",
+                                    "Shirt Size Class": "Alpha",
+                                    "Shirt Size Value": amz_size,
+                                    "Shirt Body Type": "Regular",
+                                    "Special Size": "Standard",
+                                    "Color": prod.get("color"),
+                                    "Color Map": prod.get("color"),
                                     "Standard Price": prod.get("selling_price"),
                                     "Maximum Retail Price": prod.get("mrp"),
-                                    "Color": prod.get("color"),
-                                    "Fabric Type": prod.get("fabric"),
-                                    "Material": prod.get("fabric"),
-                                    "Neck Style": prod.get("neck"),
-                                    "Pattern": prod.get("top_pattern"),
+                                    "Your Price INR (Sell on Amazon, IN)": prod.get("selling_price"),
+                                    "Maximum Retail Price (Sell on Amazon, IN)": prod.get("mrp"),
                                     "Product Description": prod.get("description"),
-                                    "Main Image URL": prod.get("images", [""])[0] if len(prod.get("images", [])) > 0 else ""
+                                    "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
+                                    "Lifestyle": "Casual",
+                                    "Style": prod.get("shape", "Straight"),
+                                    "Fit Type": "Regular",
+                                    "Department Name": "Womens",
+                                    "Target Gender": "Female",
+                                    "Age Range Description": "Adult",
+                                    "Fabric Type": prod.get("fabric", "Cotton"),
+                                    "Material": prod.get("fabric", "Cotton"),
+                                    "Pattern": prod.get("print_type", "Floral"),
+                                    "Item Type Name": category_val.upper(),
+                                    "Item Length Description": "Knee Length",
+                                    "Occasion": prod.get("occasion", "Festive"),
+                                    "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
+                                    "Manufacturer": "Pervas, Surat, Gujarat - 395010",
+                                    "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                    "Packer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                    "Design Name": prod.get("top_pattern", "Embroidered"),
+                                    "External Product Information Entity": "HSN Code",
+                                    "External Product Information": prod.get("hsn", "62114210"),
+                                    "Neck Style": prod.get("neck", "V-Neck"),
+                                    "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
+                                    "Weave Method": "Powerloom",
+                                    "Item Weight": 450.0,
+                                    "Item Weight Unit": "Grams",
+                                    "Country of Origin": "India",
+                                    "Skip Offer": "No",
+                                    "Item Condition": "New",
+                                    "Offer Condition Note": "New",
+                                    "Fulfillment Channel Code (IN)": "AMAZON_IN",
+                                    "Item Package Length": 25.0,
+                                    "Package Length Unit": "Centimeters",
+                                    "Item Package Width": 22.0,
+                                    "Package Width Unit": "Centimeters",
+                                    "Item Package Height": 3.0,
+                                    "Package Height Unit": "Centimeters",
+                                    "Package Weight": 450.0,
+                                    "Package Weight Unit": "Grams"
                                 }
 
-                            for col_name, val in row_dict.items():
-                                if col_name in col_map and val is not None:
-                                    ws.cell(row=current_row, column=col_map[col_name], value=val)
+                                for col_name, val in c_row.items():
+                                    write_cell(current_row, col_name, val)
+
+                                imgs = prod.get("images", [])
+                                if imgs:
+                                    write_cell(current_row, "Main Image URL", imgs[0])
+                                    for i_idx, img_url in enumerate(imgs[1:8]):
+                                        write_cell(current_row, "Other Image URL", img_url, occurrence=i_idx)
+
+                                write_cell(current_row, "Bullet Point", "1. Elegant Design: Features sophisticated embroidery and styling for everyday and festive elegance.", occurrence=0)
+                                write_cell(current_row, "Bullet Point", "2. Soft & Breathable Fabric: Crafted from lightweight fabric offering all-day comfort.", occurrence=1)
+                                write_cell(current_row, "Bullet Point", "3. Versatile Occasion: Ideal for casual outings, office wear, family gatherings, and celebrations.", occurrence=2)
+                                write_cell(current_row, "Bullet Point", "4. Easy Care & Lasting Style: Durable stitching and long-lasting fabric quality.", occurrence=3)
 
                             current_row += 1
                         group_id_counter += 1
@@ -428,7 +564,7 @@ else:
                 total_rows = current_row - start_row
                 st.success(f"🎉 Generated {total_rows} total rows across {len(selected_designs)} style(s) and {len(selected_brands)} brand(s)!")
                 st.download_button(
-                    label=f"📥 Download Bulk Upload Sheet ({len(selected_designs)} Styles)",
+                    label=f"📥 Download Bulk Upload Sheet ({marketplace})",
                     data=output,
                     file_name=f"{marketplace}_bulk_listing_{len(selected_designs)}_styles{out_ext}",
                     mime=out_mime,
