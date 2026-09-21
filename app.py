@@ -1,6 +1,7 @@
 import streamlit as st
 import openpyxl
 from rapidfuzz import process, fuzz
+import pandas as pd
 import json
 import os
 import io
@@ -40,8 +41,10 @@ DROPDOWNS = {
 
 st.title("👗 Multi-Marketplace Catalog & Bulk Listing Engine")
 
-tab_export, tab_catalog = st.tabs([
-    "🚀 Export Bulk Files (Reuse Saved Products)", 
+# Three distinct tabs
+tab_export, tab_view, tab_catalog = st.tabs([
+    "🚀 Export Bulk Files (Reuse Saved Products)",
+    "📋 View Catalog (Inventory Overview)",
     "➕ Master Catalog (Add / Edit Products)"
 ])
 
@@ -52,7 +55,7 @@ with tab_export:
     st.subheader("Generate Marketplace Upload Sheets from Master Catalog")
     
     if not db:
-        st.info("No products found in the catalog. Please add your first product in the 'Master Catalog' tab.")
+        st.info("No products found in the catalog. Please add a product in the 'Master Catalog' tab.")
     else:
         c1, c2, c3 = st.columns([1.5, 1.5, 2])
         
@@ -223,7 +226,36 @@ with tab_export:
                 )
 
 # ==============================================================================
-# TAB 2: MASTER CATALOG (ADD / EDIT PRODUCT)
+# TAB 2: VIEW CATALOG (OVERVIEW TABLE)
+# ==============================================================================
+with tab_view:
+    st.subheader("Master Catalog Overview")
+    if not db:
+        st.info("No products found in the catalog.")
+    else:
+        table_rows = []
+        for key, item in db.items():
+            table_rows.append({
+                "Design Code": item.get("design_code"),
+                "Title": item.get("title_core"),
+                "Color": item.get("color"),
+                "Fabric": item.get("fabric"),
+                "Pattern": item.get("top_pattern"),
+                "Neck": item.get("neck"),
+                "Sleeve": item.get("sleeve_length"),
+                "Shape": item.get("shape"),
+                "MRP (₹)": item.get("mrp"),
+                "Selling Price (₹)": item.get("selling_price"),
+                "HSN": item.get("hsn"),
+                "Sizes": ", ".join(item.get("sizes", []))
+            })
+        
+        df = pd.DataFrame(table_rows)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.caption(f"Showing **{len(df)}** style(s) currently stored in `catalog_db.json`.")
+
+# ==============================================================================
+# TAB 3: MASTER CATALOG (ADD / EDIT PRODUCT)
 # ==============================================================================
 with tab_catalog:
     st.subheader("Add or Edit Master Garment Records")
@@ -354,4 +386,4 @@ with tab_catalog:
                 "images": [u.strip() for u in img_urls.splitlines() if u.strip()]
             }
             save_db(db)
-            st.success(f"✅ Product '{d_code}' successfully saved to your master database! You can now reuse it in the Export tab.")
+            st.success(f"✅ Product '{d_code}' successfully saved to your master database! You can now view it in 'View Catalog' and use it in 'Export Bulk Files'.")
