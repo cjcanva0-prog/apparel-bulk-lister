@@ -205,7 +205,6 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
 if not db:
     st.info("No styles found in catalog. Click '➕ Add New Product' above to create one.")
 else:
-    # Build dataframe for data_editor
     table_data = []
     for key, item in db.items():
         table_data.append({
@@ -225,7 +224,6 @@ else:
 
     df_catalog = pd.DataFrame(table_data)
     
-    # Interactive selection table
     edited_df = st.data_editor(
         df_catalog,
         column_config={
@@ -305,9 +303,15 @@ else:
             elif not selected_brands:
                 st.error("Please select at least one brand.")
             else:
-                wb = openpyxl.load_workbook(uploaded_template, keep_vba=True)
+                # DYNAMIC FILE EXTENSION & MACRO HANDLING
+                is_xlsm = uploaded_template.name.lower().endswith(".xlsm")
+                keep_vba_flag = True if is_xlsm else False
+                out_ext = ".xlsm" if is_xlsm else ".xlsx"
+                out_mime = "application/vnd.ms-excel.sheet.macroEnabled.12" if is_xlsm else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+                wb = openpyxl.load_workbook(uploaded_template, keep_vba=keep_vba_flag)
                 
-                # Determine target sheet
+                # Target Sheet Detection
                 if marketplace == "Myntra":
                     sheet_name = "Kurta Sets" if "set" in category_val.lower() else "Kurtas"
                     ws = wb[sheet_name] if sheet_name in wb.sheetnames else wb.active
@@ -318,7 +322,7 @@ else:
                     header_row = 4
                     start_row = 6
 
-                # Build column mapping dynamically
+                # Dynamic column mapping
                 col_map = {}
                 for c in range(1, ws.max_column + 1):
                     h_val = ws.cell(row=header_row, column=c).value
@@ -426,7 +430,7 @@ else:
                 st.download_button(
                     label=f"📥 Download Bulk Upload Sheet ({len(selected_designs)} Styles)",
                     data=output,
-                    file_name=f"{marketplace}_bulk_listing_{len(selected_designs)}_styles.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    file_name=f"{marketplace}_bulk_listing_{len(selected_designs)}_styles{out_ext}",
+                    mime=out_mime,
                     use_container_width=True
                 )
