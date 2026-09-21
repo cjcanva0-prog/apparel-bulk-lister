@@ -1,0 +1,63 @@
+{
+  "Asmita": {
+    "design_code": "Asmita",
+    "title_core": "Floral Cotton Embroidered Kurta Set with Pants",
+    "color": "White",
+    "fabric": "Pure Cotton",
+    "top_pattern": "Embroidered",
+    "print_type": "Floral",
+    "neck": "V-Neck",
+    "sleeve_length": "Three-Quarter Sleeves",
+    "shape": "Straight",
+    "weave": "Machine Weave",
+    "wash_care": "Dry Clean",
+    "occasion": "Festive",
+    "mrp": 3999,
+    "selling_price": 1499,
+    "hsn": "62114210",
+    "sizes": ["S", "M", "L", "XL", "2XL"],
+    "package_contains": "1 Kurta, 1 Pant",
+    "net_qty": 1,
+    "description": "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.",
+    "measurements": {
+      "S": {"Across Shoulder": 14.0, "Bust": 36.0, "Chest": 36.0, "Front Length": 29.0, "Hips": 34.0, "Waist": 30.0, "Inseam Length": 25.0},
+      "M": {"Across Shoulder": 14.5, "Bust": 38.0, "Chest": 38.0, "Front Length": 29.0, "Hips": 36.0, "Waist": 32.0, "Inseam Length": 24.8},
+      "L": {"Across Shoulder": 15.0, "Bust": 40.0, "Chest": 40.0, "Front Length": 29.0, "Hips": 38.0, "Waist": 34.0, "Inseam Length": 24.3},
+      "XL": {"Across Shoulder": 15.5, "Bust": 42.0, "Chest": 42.0, "Front Length": 29.0, "Hips": 40.0, "Waist": 36.0, "Inseam Length": 23.8},
+      "2XL": {"Across Shoulder": 16.0, "Bust": 44.0, "Chest": 44.0, "Front Length": 29.0, "Hips": 42.0, "Waist": 38.0, "Inseam Length": 22.0}
+    },
+    "images": [
+      "https://m.media-amazon.com/images/I/71kawFhW1mL.jpg",
+      "https://m.media-amazon.com/images/I/81cFjq0ePkL.jpg"
+    ]
+  },
+  "Supriya": {
+    "design_code": "Supriya",
+    "title_core": "Multicolor Floral Cotton Embroidered Kurta Set with Pants",
+    "color": "Multi",
+    "fabric": "Pure Cotton",
+    "top_pattern": "Embroidered",
+    "print_type": "Floral",
+    "neck": "V-Neck",
+    "sleeve_length": "Three-Quarter Sleeves",
+    "shape": "Straight",
+    "weave": "Machine Weave",
+    "wash_care": "Dry Clean",
+    "occasion": "Festive",
+    "mrp": 3999,
+    "selling_price": 1499,
+    "hsn": "62114210",
+    "sizes": ["S", "M", "L", "XL", "2XL"],
+    "package_contains": "1 Kurta, 1 Pant",
+    "net_qty": 1,
+    "description": "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.",
+    "measurements": {
+      "S": {"Across Shoulder": 14.0, "Bust": 36.0, "Chest": 36.0, "Front Length": 29.0, "Hips": 34.0, "Waist": 30.0, "Inseam Length": 25.0},
+      "M": {"Across Shoulder": 14.5, "Bust": 38.0, "Chest": 38.0, "Front Length": 29.0, "Hips": 36.0, "Waist": 32.0, "Inseam Length": 24.8},
+      "L": {"Across Shoulder": 15.0, "Bust": 40.0, "Chest": 40.0, "Front Length": 29.0, "Hips": 38.0, "Waist": 34.0, "Inseam Length": 24.3},
+      "XL": {"Across Shoulder": 15.5, "Bust": 42.0, "Chest": 42.0, "Front Length": 29.0, "Hips": 40.0, "Waist": 36.0, "Inseam Length": 23.8},
+      "2XL": {"Across Shoulder": 16.0, "Bust": 44.0, "Chest": 44.0, "Front Length": 29.0, "Hips": 42.0, "Waist": 38.0, "Inseam Length": 22.0}
+    },
+    "images": []
+  }
+}
