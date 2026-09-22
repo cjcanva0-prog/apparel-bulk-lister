@@ -15,7 +15,18 @@ def load_db():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             try:
-                return json.load(f)
+                data = json.load(f)
+                # Backward compatibility: convert old single-color entries into color_variants list
+                for k, v in data.items():
+                    if "color_variants" not in v:
+                        v["color_variants"] = [
+                            {
+                                "color_name": v.get("color", "White"),
+                                "color_map": v.get("color", "White"),
+                                "images": v.get("images", []),
+                            }
+                        ]
+                return data
             except Exception:
                 return {}
     return {}
@@ -156,7 +167,7 @@ DROPDOWNS = {
 st.title("👗 Apparel Catalog & Multi-Marketplace Hub")
 
 # ==============================================================================
-# 1. CATALOG MANAGEMENT
+# 1. CATALOG MANAGEMENT (ADD / EDIT)
 # ==============================================================================
 col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
 with col_t1:
@@ -165,6 +176,7 @@ with col_t2:
     if st.button("➕ Add New Product", use_container_width=True, type="secondary"):
         st.session_state["show_add_modal"] = not st.session_state.get("show_add_modal", False)
         st.session_state["edit_product_key"] = None
+        st.session_state["temp_colors"] = [{"color_name": "White", "color_map": "White", "images": ""}]
 with col_t3:
     if st.button("🗑️ Delete Selected", use_container_width=True):
         st.session_state["trigger_delete"] = True
@@ -175,19 +187,30 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
     is_edit = edit_key is not None and edit_key in db
     curr_data = db[edit_key] if is_edit else {}
 
-    st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Garment to Catalog'}**")
+    st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Design to Catalog'}**")
+
+    # Maintain color variants in session state
+    if "temp_colors" not in st.session_state or is_edit and st.session_state.get("loaded_edit_key") != edit_key:
+        if is_edit:
+            st.session_state["temp_colors"] = [
+                {
+                    "color_name": c.get("color_name", "White"),
+                    "color_map": c.get("color_map", "White"),
+                    "images": "\n".join(c.get("images", [])),
+                }
+                for c in curr_data.get("color_variants", [])
+            ]
+            st.session_state["loaded_edit_key"] = edit_key
+        else:
+            st.session_state["temp_colors"] = [{"color_name": "White", "color_map": "White", "images": ""}]
+            st.session_state["loaded_edit_key"] = None
 
     with st.form("product_form"):
         f1, f2, f3 = st.columns(3)
         with f1:
-            st.markdown("### 🏷️ Basic Identifiers")
+            st.markdown("### 🏷️ Base Identifiers")
             d_code = st.text_input("Design Code / Model Name*", value=curr_data.get("design_code", "NewStyle"))
             t_core = st.text_input("Core Title (Without Brand)*", value=curr_data.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants"))
-
-            c_def = curr_data.get("color", "White")
-            clr_idx = DROPDOWNS["colors"].index(c_def) if c_def in DROPDOWNS["colors"] else len(DROPDOWNS["colors"]) - 1
-            clr_choice = st.selectbox("Color*", DROPDOWNS["colors"], index=clr_idx)
-            clr = st.text_input("Type Custom Color", value=c_def) if clr_choice == "Other / Custom..." else clr_choice
 
             fab_def = curr_data.get("fabric", "Pure Cotton")
             fab_idx = DROPDOWNS["fabrics"].index(fab_def) if fab_def in DROPDOWNS["fabrics"] else len(DROPDOWNS["fabrics"]) - 1
@@ -237,7 +260,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             occ = st.text_input("Type Custom Occasion", value=occ_def) if occ_choice == "Other / Custom..." else occ_choice
 
         with f3:
-            st.markdown("### 💰 Pricing & Commercials")
+            st.markdown("### 💰 Pricing & Standard Curve")
             mrp_val = st.number_input("MRP (₹)*", value=int(curr_data.get("mrp", 3999)), step=100)
             sp_val = st.number_input("Selling Price (₹)*", value=int(curr_data.get("selling_price", 1499)), step=50)
             hsn_val = st.text_input("HSN Code*", value=str(curr_data.get("hsn", "62114210")))
@@ -254,6 +277,34 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             )
 
         st.markdown("---")
+        st.markdown("### 🎨 Color Variants & Image Sets")
+        st.caption("Add every color this design is manufactured in. Each color gets its own images and color code.")
+
+        updated_color_variants = []
+        for idx, cv in enumerate(st.session_state["temp_colors"]):
+            st.markdown(f"**Colorway #{idx + 1}**")
+            c_col1, c_col2, c_col3 = st.columns([1.5, 1.5, 3])
+            with c_col1:
+                col_name = st.text_input(f"Color Name #{idx + 1}", value=cv["color_name"], key=f"cname_{idx}")
+            with c_col2:
+                col_map_choice = st.selectbox(
+                    f"Standard Color Map #{idx + 1}",
+                    DROPDOWNS["colors"][:-1],
+                    index=DROPDOWNS["colors"][:-1].index(cv["color_map"]) if cv["color_map"] in DROPDOWNS["colors"][:-1] else 0,
+                    key=f"cmap_{idx}",
+                )
+            with c_col3:
+                img_text = st.text_area(f"Images for {col_name} (1 URL per line)", value=cv["images"], key=f"cimg_{idx}", height=70)
+
+            updated_color_variants.append(
+                {
+                    "color_name": col_name,
+                    "color_map": col_map_choice,
+                    "images": [u.strip() for u in img_text.splitlines() if u.strip()],
+                }
+            )
+
+        st.markdown("---")
         desc = st.text_area(
             "Product Description",
             value=curr_data.get(
@@ -261,7 +312,6 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                 "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.",
             ),
         )
-        img_urls = st.text_area("Image URLs (1 link per line)", value="\n".join(curr_data.get("images", [])))
 
         save_c1, save_c2 = st.columns([1, 4])
         with save_c1:
@@ -288,7 +338,6 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             db[d_code] = {
                 "design_code": d_code,
                 "title_core": t_core,
-                "color": clr,
                 "fabric": fab,
                 "top_pattern": pat,
                 "print_type": prt,
@@ -306,27 +355,33 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                 "net_qty": 1,
                 "description": desc,
                 "measurements": {sz: std_measurements.get(sz, {}) for sz in sz_list},
-                "images": [u.strip() for u in img_urls.splitlines() if u.strip()],
+                "color_variants": updated_color_variants,
             }
             save_db(db)
             st.session_state["show_add_modal"] = False
             st.session_state["edit_product_key"] = None
-            st.success(f"✅ Product '{d_code}' saved successfully!")
+            st.success(f"✅ Product '{d_code}' with {len(updated_color_variants)} color variant(s) saved successfully!")
             st.rerun()
 
+    # Button to add another color block
+    if st.button("➕ Add Another Color Variant to this Style"):
+        st.session_state["temp_colors"].append({"color_name": "", "color_map": "White", "images": ""})
+        st.rerun()
+
 # ==============================================================================
-# 2. CATALOG TABLE WITH MULTI-SELECTION
+# 2. CATALOG TABLE
 # ==============================================================================
 if not db:
     st.info("No styles found in catalog. Click '➕ Add New Product' above to create one.")
 else:
     table_data = []
     for key, item in db.items():
+        colors_list = [c.get("color_name") for c in item.get("color_variants", [])]
         table_data.append({
             "Select": False,
             "Design Code": item.get("design_code"),
             "Title": item.get("title_core"),
-            "Color": item.get("color"),
+            "Colors": ", ".join(colors_list) if colors_list else item.get("color", ""),
             "Fabric": item.get("fabric"),
             "Pattern": item.get("top_pattern"),
             "Neck": item.get("neck"),
@@ -374,7 +429,7 @@ else:
     st.markdown("---")
 
     # ==============================================================================
-    # 3. LISTING HUB (AUTOMATED PARENT-CHILD & TEMPLATE GENERATION)
+    # 3. LISTING HUB (AUTOMATED PARENT-CHILD & COLORWAYS GENERATION)
     # ==============================================================================
     st.subheader("🚀 List Selected Products")
 
@@ -431,8 +486,12 @@ else:
                     start_row = 4
                 else:
                     ws = wb["Template"] if "Template" in wb.sheetnames else wb.active
-                    header_row = 4  # Human-readable header row in Amazon template
-                    start_row = 6  # Data starts at row 6/7
+                    header_row = 4
+                    start_row = 7  # Amazon dataRow=7
+
+                    # Clear row 6 dummy example data so it doesn't pollute the file
+                    for c in range(1, ws.max_column + 1):
+                        ws.cell(row=6, column=c).value = None
 
                 # Build column mapping from headers
                 col_map = {}
@@ -454,7 +513,6 @@ else:
                     if col_name in col_map:
                         target_col_name = col_name
                     elif header_names:
-                        # Fuzzy match fallback to handle minor template header variations
                         match, score, _ = process.extractOne(col_name, header_names, scorer=fuzz.token_sort_ratio)
                         if score >= 88:
                             target_col_name = match
@@ -469,10 +527,11 @@ else:
 
                 for d_name in selected_designs:
                     prod = db[d_name]
+                    colorways = prod.get("color_variants", [{"color_name": "White", "color_map": "White", "images": []}])
 
                     for brand in selected_brands:
                         # ------------------------------------------------------
-                        # AMAZON: PARENT ROW GENERATION FIRST
+                        # AMAZON: 1 SINGLE PARENT ROW FOR THE WHOLE DESIGN
                         # ------------------------------------------------------
                         if marketplace == "Amazon.in":
                             parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
@@ -520,11 +579,11 @@ else:
                             for col_name, val in p_row.items():
                                 write_cell(current_row, col_name, val)
 
-                            # Populate images and bullets for parent
-                            imgs = prod.get("images", [])
-                            if imgs:
-                                write_cell(current_row, "Main Image URL", imgs[0])
-                                for i_idx, img_url in enumerate(imgs[1:8]):
+                            # Parent uses images of the first colorway
+                            first_c_imgs = colorways[0].get("images", [])
+                            if first_c_imgs:
+                                write_cell(current_row, "Main Image URL", first_c_imgs[0])
+                                for i_idx, img_url in enumerate(first_c_imgs[1:8]):
                                     write_cell(current_row, "Other Image URL", img_url, occurrence=i_idx)
 
                             write_cell(current_row, "Bullet Point", "1. Elegant Design: Features sophisticated embroidery and styling for everyday and festive elegance.", occurrence=0)
@@ -535,160 +594,164 @@ else:
                             current_row += 1
 
                         # ------------------------------------------------------
-                        # CHILD ROWS GENERATION (AMAZON & MYNTRA)
+                        # CHILD ROWS: LOOP THROUGH EVERY COLORWAY & SIZE
                         # ------------------------------------------------------
-                        for sz in prod.get("sizes", []):
-                            amz_size = "2XL" if sz.upper() in ["2XL", "XXL"] else sz
-                            myntra_size = "XXL" if sz.upper() in ["2XL", "XXL"] else sz
+                        for cway in colorways:
+                            c_name = cway.get("color_name", "White")
+                            c_map = cway.get("color_map", c_name)
+                            c_imgs = cway.get("images", [])
 
-                            m = prod.get("measurements", {}).get(sz, {})
+                            for sz in prod.get("sizes", []):
+                                amz_size = "2XL" if sz.upper() in ["2XL", "XXL"] else sz
+                                myntra_size = "XXL" if sz.upper() in ["2XL", "XXL"] else sz
+                                m = prod.get("measurements", {}).get(sz, {})
 
-                            if marketplace == "Myntra":
-                                sku = f"{brand}-P-{prod.get('design_code')}-{myntra_size}"
-                                art_num = f"{brand}-P-{prod.get('design_code')}"
-                                display_name = f"{brand} {prod.get('color', '')} {prod.get('title_core', '')}"
+                                if marketplace == "Myntra":
+                                    sku = f"{brand}-P-{prod.get('design_code')}-{c_name}-{myntra_size}"
+                                    art_num = f"{brand}-P-{prod.get('design_code')}-{c_name}"
+                                    display_name = f"{brand} {c_name} {prod.get('title_core', '')}"
 
-                                m_row = {
-                                    "styleGroupId": group_id_counter,
-                                    "vendorSkuCode": sku,
-                                    "vendorArticleNumber": art_num,
-                                    "vendorArticleName": display_name,
-                                    "brand": brand,
-                                    "Manufacturer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
-                                    "Packer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
-                                    "Country Of Origin": "India",
-                                    "articleType": category_val,
-                                    "Brand Size": myntra_size,
-                                    "Standard Size": myntra_size,
-                                    "is Standard Size present on Label": "Yes",
-                                    "Brand Colour (Remarks)": prod.get("color"),
-                                    "HSN": prod.get("hsn"),
-                                    "SKUCode": sku,
-                                    "MRP": prod.get("mrp"),
-                                    "ISP": prod.get("selling_price"),
-                                    "AgeGroup": "Adults-Women",
-                                    "Prominent Colour": prod.get("color"),
-                                    "FashionType": "Fashion",
-                                    "Usage": "Casual",
-                                    "Product Details": prod.get("description"),
-                                    "productDisplayName": display_name,
-                                    "Top Fabric": prod.get("fabric"),
-                                    "Top Pattern": prod.get("top_pattern"),
-                                    "Neck": prod.get("neck"),
-                                    "Sleeve Length": prod.get("sleeve_length"),
-                                    "Top Shape": prod.get("shape"),
-                                    "Bottom Fabric": prod.get("fabric"),
-                                    "Bottom Pattern": prod.get("top_pattern"),
-                                    "Print or Pattern Type": prod.get("print_type"),
-                                    "Occasion": prod.get("occasion"),
-                                    "Weave Pattern": "Regular",
-                                    "Weave Type": prod.get("weave"),
-                                    "Wash Care": prod.get("wash_care"),
-                                    "Stitch": "Ready to Wear",
-                                    "Package Contains": prod.get("package_contains"),
-                                    "Net Quantity": prod.get("net_qty"),
-                                    "Across Shoulder ( Inches )": m.get("Across Shoulder"),
-                                    "Bust ( Inches )": m.get("Bust"),
-                                    "Chest ( Inches )": m.get("Chest"),
-                                    "Front Length ( Inches )": m.get("Front Length"),
-                                    "Hips ( Inches )": m.get("Hips"),
-                                    "Waist ( Inches )": m.get("Waist"),
-                                    "Inseam Length ( Inches )": m.get("Inseam Length"),
-                                }
-                                for col_name, val in m_row.items():
-                                    write_cell(current_row, col_name, val)
+                                    m_row = {
+                                        "styleGroupId": group_id_counter,  # Unique group ID per colorway
+                                        "vendorSkuCode": sku,
+                                        "vendorArticleNumber": art_num,
+                                        "vendorArticleName": display_name,
+                                        "brand": brand,
+                                        "Manufacturer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
+                                        "Packer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
+                                        "Country Of Origin": "India",
+                                        "articleType": category_val,
+                                        "Brand Size": myntra_size,
+                                        "Standard Size": myntra_size,
+                                        "is Standard Size present on Label": "Yes",
+                                        "Brand Colour (Remarks)": c_name,
+                                        "HSN": prod.get("hsn"),
+                                        "SKUCode": sku,
+                                        "MRP": prod.get("mrp"),
+                                        "ISP": prod.get("selling_price"),
+                                        "AgeGroup": "Adults-Women",
+                                        "Prominent Colour": c_map,
+                                        "FashionType": "Fashion",
+                                        "Usage": "Casual",
+                                        "Product Details": prod.get("description"),
+                                        "productDisplayName": display_name,
+                                        "Top Fabric": prod.get("fabric"),
+                                        "Top Pattern": prod.get("top_pattern"),
+                                        "Neck": prod.get("neck"),
+                                        "Sleeve Length": prod.get("sleeve_length"),
+                                        "Top Shape": prod.get("shape"),
+                                        "Bottom Fabric": prod.get("fabric"),
+                                        "Bottom Pattern": prod.get("top_pattern"),
+                                        "Print or Pattern Type": prod.get("print_type"),
+                                        "Occasion": prod.get("occasion"),
+                                        "Weave Pattern": "Regular",
+                                        "Weave Type": prod.get("weave"),
+                                        "Wash Care": prod.get("wash_care"),
+                                        "Stitch": "Ready to Wear",
+                                        "Package Contains": prod.get("package_contains"),
+                                        "Net Quantity": prod.get("net_qty"),
+                                        "Across Shoulder ( Inches )": m.get("Across Shoulder"),
+                                        "Bust ( Inches )": m.get("Bust"),
+                                        "Chest ( Inches )": m.get("Chest"),
+                                        "Front Length ( Inches )": m.get("Front Length"),
+                                        "Hips ( Inches )": m.get("Hips"),
+                                        "Waist ( Inches )": m.get("Waist"),
+                                        "Inseam Length ( Inches )": m.get("Inseam Length"),
+                                    }
+                                    for col_name, val in m_row.items():
+                                        write_cell(current_row, col_name, val)
 
-                            else:
-                                # AMAZON CHILD ROW
-                                child_sku = f"{brand}-{prod.get('design_code')}-{prod.get('color', 'Clr')}-{amz_size}"
-                                parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
-                                child_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} Kurta Pant Set ({prod.get('design_code')} {prod.get('color', '')} {amz_size})"
+                                else:
+                                    # AMAZON CHILD ROW
+                                    child_sku = f"{brand}-{prod.get('design_code')}-{c_name}-{amz_size}"
+                                    parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
+                                    child_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} Kurta Pant Set ({prod.get('design_code')} {c_name} {amz_size})"
 
-                                c_row = {
-                                    "Status": "Active",
-                                    "Title": child_title,
-                                    "SKU": child_sku,
-                                    "Product Type": category_val.upper(),
-                                    "Listing Action": "Create or Replace (Full Update)",
-                                    "Parentage Level": "Child",
-                                    "Parent SKU": parent_sku,
-                                    "Variation Theme Name": "SIZE/COLOR",
-                                    "Item Name": child_title,
-                                    "Brand Name": brand,
-                                    "Product Id Type": "GTIN Exempt",
-                                    "Model Name": prod.get("design_code"),
-                                    "Part Number": prod.get("design_code"),
-                                    "Apparel Size System": "IN",
-                                    "Apparel Size Class": "Alpha",
-                                    "Apparel Size Value": amz_size,
-                                    "Shirt Size System": "IN",
-                                    "Shirt Size Class": "Alpha",
-                                    "Shirt Size Value": amz_size,
-                                    "Shirt Body Type": "Regular",
-                                    "Special Size": "Standard",
-                                    "Color": prod.get("color"),
-                                    "Color Map": prod.get("color"),
-                                    "Standard Price": prod.get("selling_price"),
-                                    "Maximum Retail Price": prod.get("mrp"),
-                                    "Your Price INR (Sell on Amazon, IN)": prod.get("selling_price"),
-                                    "Maximum Retail Price (Sell on Amazon, IN)": prod.get("mrp"),
-                                    "Product Description": prod.get("description"),
-                                    "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
-                                    "Lifestyle": "Casual",
-                                    "Style": prod.get("shape", "Straight"),
-                                    "Fit Type": "Regular",
-                                    "Department Name": "Womens",
-                                    "Target Gender": "Female",
-                                    "Age Range Description": "Adult",
-                                    "Fabric Type": prod.get("fabric", "Cotton"),
-                                    "Material": prod.get("fabric", "Cotton"),
-                                    "Pattern": prod.get("print_type", "Floral"),
-                                    "Item Type Name": category_val.upper(),
-                                    "Item Length Description": "Knee Length",
-                                    "Occasion": prod.get("occasion", "Festive"),
-                                    "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
-                                    "Manufacturer": "Pervas, Surat, Gujarat - 395010",
-                                    "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
-                                    "Packer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
-                                    "Design Name": prod.get("top_pattern", "Embroidered"),
-                                    "External Product Information Entity": "HSN Code",
-                                    "External Product Information": prod.get("hsn", "62114210"),
-                                    "Neck Style": prod.get("neck", "V-Neck"),
-                                    "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
-                                    "Weave Method": "Powerloom",
-                                    "Item Weight": 450.0,
-                                    "Item Weight Unit": "Grams",
-                                    "Country of Origin": "India",
-                                    "Skip Offer": "No",
-                                    "Item Condition": "New",
-                                    "Offer Condition Note": "New",
-                                    "Fulfillment Channel Code (IN)": "AMAZON_IN",
-                                    "Item Package Length": 25.0,
-                                    "Package Length Unit": "Centimeters",
-                                    "Item Package Width": 22.0,
-                                    "Package Width Unit": "Centimeters",
-                                    "Item Package Height": 3.0,
-                                    "Package Height Unit": "Centimeters",
-                                    "Package Weight": 450.0,
-                                    "Package Weight Unit": "Grams",
-                                }
+                                    c_row = {
+                                        "Status": "Active",
+                                        "Title": child_title,
+                                        "SKU": child_sku,
+                                        "Product Type": category_val.upper(),
+                                        "Listing Action": "Create or Replace (Full Update)",
+                                        "Parentage Level": "Child",
+                                        "Parent SKU": parent_sku,
+                                        "Variation Theme Name": "SIZE/COLOR",
+                                        "Item Name": child_title,
+                                        "Brand Name": brand,
+                                        "Product Id Type": "GTIN Exempt",
+                                        "Model Name": prod.get("design_code"),
+                                        "Part Number": prod.get("design_code"),
+                                        "Apparel Size System": "IN",
+                                        "Apparel Size Class": "Alpha",
+                                        "Apparel Size Value": amz_size,
+                                        "Shirt Size System": "IN",
+                                        "Shirt Size Class": "Alpha",
+                                        "Shirt Size Value": amz_size,
+                                        "Shirt Body Type": "Regular",
+                                        "Special Size": "Standard",
+                                        "Color": c_name,
+                                        "Color Map": c_map,
+                                        "Standard Price": prod.get("selling_price"),
+                                        "Maximum Retail Price": prod.get("mrp"),
+                                        "Your Price INR (Sell on Amazon, IN)": prod.get("selling_price"),
+                                        "Maximum Retail Price (Sell on Amazon, IN)": prod.get("mrp"),
+                                        "Product Description": prod.get("description"),
+                                        "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
+                                        "Lifestyle": "Casual",
+                                        "Style": prod.get("shape", "Straight"),
+                                        "Fit Type": "Regular",
+                                        "Department Name": "Womens",
+                                        "Target Gender": "Female",
+                                        "Age Range Description": "Adult",
+                                        "Fabric Type": prod.get("fabric", "Cotton"),
+                                        "Material": prod.get("fabric", "Cotton"),
+                                        "Pattern": prod.get("print_type", "Floral"),
+                                        "Item Type Name": category_val.upper(),
+                                        "Item Length Description": "Knee Length",
+                                        "Occasion": prod.get("occasion", "Festive"),
+                                        "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
+                                        "Manufacturer": "Pervas, Surat, Gujarat - 395010",
+                                        "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                        "Packer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                        "Design Name": prod.get("top_pattern", "Embroidered"),
+                                        "External Product Information Entity": "HSN Code",
+                                        "External Product Information": prod.get("hsn", "62114210"),
+                                        "Neck Style": prod.get("neck", "V-Neck"),
+                                        "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
+                                        "Weave Method": "Powerloom",
+                                        "Item Weight": 450.0,
+                                        "Item Weight Unit": "Grams",
+                                        "Country of Origin": "India",
+                                        "Skip Offer": "No",
+                                        "Item Condition": "New",
+                                        "Offer Condition Note": "New",
+                                        "Fulfillment Channel Code (IN)": "AMAZON_IN",
+                                        "Item Package Length": 25.0,
+                                        "Package Length Unit": "Centimeters",
+                                        "Item Package Width": 22.0,
+                                        "Package Width Unit": "Centimeters",
+                                        "Item Package Height": 3.0,
+                                        "Package Height Unit": "Centimeters",
+                                        "Package Weight": 450.0,
+                                        "Package Weight Unit": "Grams",
+                                    }
 
-                                for col_name, val in c_row.items():
-                                    write_cell(current_row, col_name, val)
+                                    for col_name, val in c_row.items():
+                                        write_cell(current_row, col_name, val)
 
-                                imgs = prod.get("images", [])
-                                if imgs:
-                                    write_cell(current_row, "Main Image URL", imgs[0])
-                                    for i_idx, img_url in enumerate(imgs[1:8]):
-                                        write_cell(current_row, "Other Image URL", img_url, occurrence=i_idx)
+                                    if c_imgs:
+                                        write_cell(current_row, "Main Image URL", c_imgs[0])
+                                        for i_idx, img_url in enumerate(c_imgs[1:8]):
+                                            write_cell(current_row, "Other Image URL", img_url, occurrence=i_idx)
 
-                                write_cell(current_row, "Bullet Point", "1. Elegant Design: Features sophisticated embroidery and styling for everyday and festive elegance.", occurrence=0)
-                                write_cell(current_row, "Bullet Point", "2. Soft & Breathable Fabric: Crafted from lightweight fabric offering all-day comfort.", occurrence=1)
-                                write_cell(current_row, "Bullet Point", "3. Versatile Occasion: Ideal for casual outings, office wear, family gatherings, and celebrations.", occurrence=2)
-                                write_cell(current_row, "Bullet Point", "4. Easy Care & Lasting Style: Durable stitching and long-lasting fabric quality.", occurrence=3)
+                                    write_cell(current_row, "Bullet Point", "1. Elegant Design: Features sophisticated embroidery and styling for everyday and festive elegance.", occurrence=0)
+                                    write_cell(current_row, "Bullet Point", "2. Soft & Breathable Fabric: Crafted from lightweight fabric offering all-day comfort.", occurrence=1)
+                                    write_cell(current_row, "Bullet Point", "3. Versatile Occasion: Ideal for casual outings, office wear, family gatherings, and celebrations.", occurrence=2)
+                                    write_cell(current_row, "Bullet Point", "4. Easy Care & Lasting Style: Durable stitching and long-lasting fabric quality.", occurrence=3)
 
-                            current_row += 1
-                        group_id_counter += 1
+                                current_row += 1
+                            # Increment styleGroupId for each colorway on Myntra
+                            group_id_counter += 1
 
                 output = io.BytesIO()
                 wb.save(output)
