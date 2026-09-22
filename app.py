@@ -1,4 +1,5 @@
 import base64
+import datetime
 import io
 import json
 import os
@@ -27,7 +28,6 @@ def get_github_headers():
 
 
 def load_db():
-    # 1. First attempt to pull the live database from GitHub
     headers = get_github_headers()
     if headers and "REPO_NAME" in st.secrets:
         repo = st.secrets["REPO_NAME"]
@@ -40,7 +40,6 @@ def load_db():
                 content_b64 = r.json().get("content", "")
                 data_str = base64.b64decode(content_b64).decode("utf-8")
                 data = json.loads(data_str)
-                # Backward compatibility for older single-color items
                 for k, v in data.items():
                     if "color_variants" not in v:
                         v["color_variants"] = [
@@ -54,7 +53,6 @@ def load_db():
         except Exception:
             pass
 
-    # 2. Fallback to container's local file
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             try:
@@ -75,11 +73,9 @@ def load_db():
 
 
 def save_db(data):
-    # 1. Save locally in active container
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-    # 2. Push direct commit to GitHub repository
     headers = get_github_headers()
     if headers and "REPO_NAME" in st.secrets:
         repo = st.secrets["REPO_NAME"]
@@ -114,126 +110,51 @@ db = load_db()
 
 DROPDOWNS = {
     "colors": [
-        "White",
-        "Black",
-        "Multi",
-        "Off White",
-        "Navy Blue",
-        "Mustard",
-        "Pink",
-        "Red",
-        "Green",
-        "Yellow",
-        "Maroon",
-        "Beige",
-        "Purple",
-        "Grey",
-        "Teal",
-        "Coral",
-        "Other / Custom...",
+        "White", "Black", "Multi", "Off White", "Navy Blue", "Mustard", "Pink", 
+        "Red", "Green", "Yellow", "Maroon", "Beige", "Purple", "Grey", "Teal", 
+        "Coral", "Other / Custom..."
     ],
     "fabrics": [
-        "Pure Cotton",
-        "Cotton Blend",
-        "Cotton Silk",
-        "Silk Blend",
-        "Georgette",
-        "Chanderi",
-        "Rayon",
-        "Organza",
-        "Tissue",
-        "Modal",
-        "Satin",
-        "Linen Blend",
-        "Other / Custom...",
+        "Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette", 
+        "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend", 
+        "Other / Custom..."
     ],
     "top_patterns": [
-        "Embroidered",
-        "Printed",
-        "Solid",
-        "Woven Design",
-        "Yoke Design",
-        "Self Design",
-        "Striped",
-        "Checked",
-        "Colourblocked",
-        "Other / Custom...",
+        "Embroidered", "Printed", "Solid", "Woven Design", "Yoke Design", 
+        "Self Design", "Striped", "Checked", "Colourblocked", "Other / Custom..."
     ],
     "print_types": [
-        "Floral",
-        "Geometric",
-        "Paisley",
-        "Ethnic Motifs",
-        "Abstract",
-        "Solid",
-        "Tribal",
-        "Chevron",
-        "Tie and Dye",
-        "Polka Dot",
-        "Other / Custom...",
+        "Floral", "Geometric", "Paisley", "Ethnic Motifs", "Abstract", "Solid", 
+        "Tribal", "Chevron", "Tie and Dye", "Polka Dot", "Other / Custom..."
     ],
     "neck_styles": [
-        "V-Neck",
-        "Round Neck",
-        "Mandarin Collar",
-        "Sweetheart Neck",
-        "Boat Neck",
-        "Square Neck",
-        "Halter Neck",
-        "Shirt Collar",
-        "Scoop Neck",
-        "Keyhole Neck",
-        "Other / Custom...",
+        "V-Neck", "Round Neck", "Mandarin Collar", "Sweetheart Neck", "Boat Neck", 
+        "Square Neck", "Halter Neck", "Shirt Collar", "Scoop Neck", "Keyhole Neck", 
+        "Other / Custom..."
     ],
     "sleeve_lengths": [
-        "Three-Quarter Sleeves",
-        "Short Sleeves",
-        "Long Sleeves",
-        "Sleeveless",
-        "Other / Custom...",
+        "Three-Quarter Sleeves", "Short Sleeves", "Long Sleeves", "Sleeveless", 
+        "Other / Custom..."
     ],
     "shapes": [
-        "Straight",
-        "A-Line",
-        "Anarkali",
-        "Flared",
-        "Kaftan",
-        "Pathani",
-        "Other / Custom...",
+        "Straight", "A-Line", "Anarkali", "Flared", "Kaftan", "Pathani", 
+        "Other / Custom..."
     ],
     "weave_types": [
-        "Machine Weave",
-        "Handloom",
-        "Regular",
-        "Knitted",
-        "Powerloom",
-        "Other / Custom...",
+        "Machine Weave", "Handloom", "Regular", "Knitted", "Powerloom", 
+        "Other / Custom..."
     ],
     "wash_cares": [
-        "Dry Clean",
-        "Hand Wash",
-        "Machine Wash",
-        "Dry Clean Only",
-        "Hand Wash Only",
-        "Other / Custom...",
+        "Dry Clean", "Hand Wash", "Machine Wash", "Dry Clean Only", 
+        "Hand Wash Only", "Other / Custom..."
     ],
     "occasions": [
-        "Festive",
-        "Casual",
-        "Daily",
-        "Party",
-        "Wedding",
-        "Fusion",
-        "Work",
-        "Other / Custom...",
+        "Festive", "Casual", "Daily", "Party", "Wedding", "Fusion", "Work", 
+        "Other / Custom..."
     ],
     "packages": [
-        "1 Kurta, 1 Pant",
-        "1 Kurta, 1 Pant, 1 Dupatta",
-        "1 Kurta",
-        "1 Kurta, 1 Salwar",
-        "1 Kurta, 1 Palazzo",
-        "Other / Custom...",
+        "1 Kurta, 1 Pant", "1 Kurta, 1 Pant, 1 Dupatta", "1 Kurta", 
+        "1 Kurta, 1 Salwar", "1 Kurta, 1 Palazzo", "Other / Custom..."
     ],
 }
 
@@ -565,7 +486,7 @@ else:
                 else:
                     ws = wb["Template"] if "Template" in wb.sheetnames else wb.active
                     header_row = 4
-                    start_row = 7  # Amazon data starts at row 7
+                    start_row = 7
 
                     # Clear row 6 dummy example data so it doesn't pollute the file
                     for c in range(1, ws.max_column + 1):
@@ -602,6 +523,7 @@ else:
 
                 current_row = start_row
                 group_id_counter = 1
+                curr_year = datetime.datetime.now().year
 
                 for d_name in selected_designs:
                     prod = db[d_name]
@@ -688,6 +610,15 @@ else:
                                     art_num = f"{brand}-P-{prod.get('design_code')}-{c_name}"
                                     display_name = f"{brand} {c_name} {prod.get('title_core', '')}"
 
+                                    style_note_text = (
+                                        f"Step into elegance with this mesmerizing  Kurta set by {brand} . "
+                                        f"Whether you are heading to a family dinner or a festive celebration, the  lush  fabric "
+                                        f"creates a look that is both traditional and trendy. The neckline adds a touch of modern grace, "
+                                        f"while the flared silhouette ensures you stay comfortable all day long. Best of all? It’s low maintenance "
+                                        f"with easy machine or hand wash care, making it a staple for your ethnic. {brand} brings you this stunning "
+                                        f"set that blends comfort with style. Pair this ensemble with silver oxidized jewelry and block heels for a complete festive look."
+                                    )
+
                                     m_row = {
                                         "styleGroupId": group_id_counter,
                                         "vendorSkuCode": sku,
@@ -710,7 +641,10 @@ else:
                                         "Prominent Colour": c_map,
                                         "FashionType": "Fashion",
                                         "Usage": "Casual",
+                                        "Year": curr_year,
                                         "Product Details": prod.get("description"),
+                                        "styleNote": style_note_text,
+                                        "materialCareDescription": "Dry Clean Only",
                                         "productDisplayName": display_name,
                                         "Top Fabric": prod.get("fabric"),
                                         "Top Pattern": prod.get("top_pattern"),
@@ -719,12 +653,18 @@ else:
                                         "Top Shape": prod.get("shape"),
                                         "Bottom Fabric": prod.get("fabric"),
                                         "Bottom Pattern": prod.get("top_pattern"),
+                                        "Bottom Closure": "NA",
+                                        "Waistband": "NA",
                                         "Print or Pattern Type": prod.get("print_type"),
                                         "Occasion": prod.get("occasion"),
                                         "Weave Pattern": "Regular",
                                         "Weave Type": prod.get("weave"),
                                         "Wash Care": prod.get("wash_care"),
                                         "Stitch": "Ready to Wear",
+                                        "Add-Ons": "NA",
+                                        "Number of Pockets": "NA",
+                                        "Number of Items": 1,
+                                        "Net Quantity Unit": "Piece",
                                         "Package Contains": prod.get("package_contains"),
                                         "Net Quantity": prod.get("net_qty"),
                                         "Across Shoulder ( Inches )": m.get("Across Shoulder"),
