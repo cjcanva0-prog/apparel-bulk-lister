@@ -154,6 +154,22 @@ COLOR_MAPPER = {
     "Other / Custom...": "Other / Custom...",
 }
 
+# Unified Fabric Mapper (Ensures Amazon receives strict dropdown values like 'Cotton')
+FABRIC_MAPPER = {
+    "Pure Cotton": "Cotton",
+    "Cotton Blend": "Cotton Blend",
+    "Cotton Silk": "Silk Blend",
+    "Silk Blend": "Silk Blend",
+    "Georgette": "Georgette",
+    "Chanderi": "Chanderi",
+    "Rayon": "Rayon",
+    "Organza": "Organza",
+    "Tissue": "Tissue",
+    "Modal": "Modal",
+    "Satin": "Satin",
+    "Linen Blend": "Linen Blend",
+}
+
 # Unified Length Mapping: Selection -> (Myntra Top Length, Amazon Item Length Description)
 LENGTH_MAPPER = {
     "Knee Length": ("Knee Length", "Knee Length"),
@@ -165,6 +181,20 @@ LENGTH_MAPPER = {
     "Other / Custom...": ("Knee Length", "Knee Length"),
 }
 
+# Amazon exact dropdown size strings matching template validation
+AMAZON_SIZE_MAP = {
+    "XS": "XS (x_s)",
+    "S": "S (s)",
+    "M": "M (m)",
+    "L": "L (l)",
+    "XL": "XL",
+    "2XL": "2XL (2x_l)",
+    "XXL": "2XL (2x_l)",
+    "3XL": "3XL",
+    "4XL": "4XL",
+    "5XL": "5XL"
+}
+
 DROPDOWNS = {
     "colors": list(COLOR_MAPPER.keys()),
     "amazon_color_maps": [
@@ -173,11 +203,7 @@ DROPDOWNS = {
         "Pink", "Purple", "Red", "Silver", "Turquoise", "White", "Yellow",
     ],
     "top_lengths": list(LENGTH_MAPPER.keys()),
-    "fabrics": [
-        "Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette",
-        "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend",
-        "Other / Custom...",
-    ],
+    "fabrics": list(FABRIC_MAPPER.keys()) + ["Other / Custom..."],
     "top_patterns": [
         "Embroidered", "Printed", "Solid", "Woven Design", "Yoke Design",
         "Self Design", "Striped", "Checked", "Colourblocked", "Other / Custom...",
@@ -441,7 +467,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.rerun()
 
     if st.button("➕ Add Another Color Variant to this Style"):
-        st.session_state["temp_colors"].append({"color_name": "", "color_map": "White", "images": ""})
+        st.session_state["temp_colors"].append({"color_name": "White", "color_map": "White", "images": ""})
         st.rerun()
 
 # ==============================================================================
@@ -612,13 +638,17 @@ else:
                     myntra_top_len_val = len_tuple[0]
                     amazon_item_len_val = len_tuple[1]
 
+                    # Mapped fabric for Amazon
+                    raw_fabric = prod.get("fabric", "Pure Cotton")
+                    amz_fabric_val = FABRIC_MAPPER.get(raw_fabric, "Cotton")
+
                     for brand in selected_brands:
                         # ------------------------------------------------------
                         # AMAZON: 1 SINGLE PARENT ROW FOR THE WHOLE DESIGN
                         # ------------------------------------------------------
                         if marketplace == "Amazon.in":
                             parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
-                            parent_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} {prod.get('top_pattern', 'Printed')} Kurta Pant Set ({prod.get('design_code')})"
+                            parent_title = f"{brand} Women's {raw_fabric} {prod.get('top_pattern', 'Printed')} Kurta Pant Set ({prod.get('design_code')})"
 
                             p_row = {
                                 "Status": "Active",
@@ -639,8 +669,8 @@ else:
                                 "Department Name": "Womens",
                                 "Target Gender": "Female",
                                 "Age Range Description": "Adult",
-                                "Fabric Type": prod.get("fabric", "Cotton"),
-                                "Material": prod.get("fabric", "Cotton"),
+                                "Fabric Type": amz_fabric_val,
+                                "Material": amz_fabric_val,
                                 "Item Type Name": category_val.upper(),
                                 "Item Length Description": amazon_item_len_val,
                                 "Occasion": prod.get("occasion", "Festive"),
@@ -657,6 +687,17 @@ else:
                                 "Skip Offer": "No",
                                 "Item Condition": "New",
                                 "Offer Condition Note": "New",
+                                "Number of Items": 1,
+                                "Item Length Longer Edge": 46.0,
+                                "Item Length Unit": "Centimeters",
+                                "Item Package Length": 25.0,
+                                "Package Length Unit": "Centimeters",
+                                "Item Package Width": 22.0,
+                                "Package Width Unit": "Centimeters",
+                                "Item Package Height": 3.0,
+                                "Package Height Unit": "Centimeters",
+                                "Package Weight": 450.0,
+                                "Package Weight Unit": "Grams",
                             }
 
                             for col_name, val in p_row.items():
@@ -684,7 +725,7 @@ else:
                             c_imgs = cway.get("images", [])
 
                             for sz in prod.get("sizes", []):
-                                amz_size = "2XL" if sz.upper() in ["2XL", "XXL"] else sz
+                                amz_size_val = AMAZON_SIZE_MAP.get(sz.upper(), sz)
                                 myntra_size = "XXL" if sz.upper() in ["2XL", "XXL"] else sz
                                 m = prod.get("measurements", {}).get(sz, {})
 
@@ -729,13 +770,13 @@ else:
                                         "styleNote": style_note_text,
                                         "materialCareDescription": "Dry Clean Only",
                                         "productDisplayName": display_name,
-                                        "Top Fabric": prod.get("fabric"),
+                                        "Top Fabric": raw_fabric,
                                         "Top Pattern": prod.get("top_pattern"),
                                         "Neck": prod.get("neck"),
                                         "Sleeve Length": prod.get("sleeve_length"),
                                         "Top Shape": prod.get("shape"),
                                         "Top Length": myntra_top_len_val,
-                                        "Bottom Fabric": prod.get("fabric"),
+                                        "Bottom Fabric": raw_fabric,
                                         "Bottom Pattern": prod.get("top_pattern"),
                                         "Bottom Closure": "NA",
                                         "Waistband": "NA",
@@ -764,9 +805,9 @@ else:
 
                                 else:
                                     # AMAZON CHILD ROW
-                                    child_sku = f"{brand}-{prod.get('design_code')}-{c_name}-{amz_size}"
+                                    child_sku = f"{brand}-{prod.get('design_code')}-{c_name}-{sz}"
                                     parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
-                                    child_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} Kurta Pant Set ({prod.get('design_code')} {c_name} {amz_size})"
+                                    child_title = f"{brand} Women's {raw_fabric} Kurta Pant Set ({prod.get('design_code')} {c_name} {sz})"
 
                                     c_row = {
                                         "Status": "Active",
@@ -784,10 +825,10 @@ else:
                                         "Part Number": prod.get("design_code"),
                                         "Apparel Size System": "IN",
                                         "Apparel Size Class": "Alpha",
-                                        "Apparel Size Value": amz_size,
+                                        "Apparel Size Value": amz_size_val,
                                         "Shirt Size System": "IN",
                                         "Shirt Size Class": "Alpha",
-                                        "Shirt Size Value": amz_size,
+                                        "Shirt Size Value": amz_size_val,
                                         "Shirt Body Type": "Regular",
                                         "Special Size": "Standard",
                                         "Color": c_name,
@@ -804,8 +845,8 @@ else:
                                         "Department Name": "Womens",
                                         "Target Gender": "Female",
                                         "Age Range Description": "Adult",
-                                        "Fabric Type": prod.get("fabric", "Cotton"),
-                                        "Material": prod.get("fabric", "Cotton"),
+                                        "Fabric Type": amz_fabric_val,
+                                        "Material": amz_fabric_val,
                                         "Pattern": prod.get("print_type", "Floral"),
                                         "Item Type Name": category_val.upper(),
                                         "Item Length Description": amazon_item_len_val,
@@ -827,6 +868,9 @@ else:
                                         "Item Condition": "New",
                                         "Offer Condition Note": "New",
                                         "Fulfillment Channel Code (IN)": "AMAZON_IN",
+                                        "Number of Items": 1,
+                                        "Item Length Longer Edge": 46.0,
+                                        "Item Length Unit": "Centimeters",
                                         "Item Package Length": 25.0,
                                         "Package Length Unit": "Centimeters",
                                         "Item Package Width": 22.0,
