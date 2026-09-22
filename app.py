@@ -1,14 +1,15 @@
-import streamlit as st
-import openpyxl
-from rapidfuzz import process, fuzz
-import pandas as pd
+import io
 import json
 import os
-import io
+import openpyxl
+import pandas as pd
+from rapidfuzz import fuzz, process
+import streamlit as st
 
 DB_FILE = "catalog_db.json"
 
 st.set_page_config(page_title="Apparel Multi-Marketplace Hub", layout="wide")
+
 
 def load_db():
     if os.path.exists(DB_FILE):
@@ -19,24 +20,137 @@ def load_db():
                 return {}
     return {}
 
+
 def save_db(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
+
 db = load_db()
 
 DROPDOWNS = {
-    "colors": ["White", "Black", "Multi", "Off White", "Navy Blue", "Mustard", "Pink", "Red", "Green", "Yellow", "Maroon", "Beige", "Purple", "Grey", "Teal", "Coral", "Other / Custom..."],
-    "fabrics": ["Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette", "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend", "Other / Custom..."],
-    "top_patterns": ["Embroidered", "Printed", "Solid", "Woven Design", "Yoke Design", "Self Design", "Striped", "Checked", "Colourblocked", "Other / Custom..."],
-    "print_types": ["Floral", "Geometric", "Paisley", "Ethnic Motifs", "Abstract", "Solid", "Tribal", "Chevron", "Tie and Dye", "Polka Dot", "Other / Custom..."],
-    "neck_styles": ["V-Neck", "Round Neck", "Mandarin Collar", "Sweetheart Neck", "Boat Neck", "Square Neck", "Halter Neck", "Shirt Collar", "Scoop Neck", "Keyhole Neck", "Other / Custom..."],
-    "sleeve_lengths": ["Three-Quarter Sleeves", "Short Sleeves", "Long Sleeves", "Sleeveless", "Other / Custom..."],
-    "shapes": ["Straight", "A-Line", "Anarkali", "Flared", "Kaftan", "Pathani", "Other / Custom..."],
-    "weave_types": ["Machine Weave", "Handloom", "Regular", "Knitted", "Powerloom", "Other / Custom..."],
-    "wash_cares": ["Dry Clean", "Hand Wash", "Machine Wash", "Dry Clean Only", "Hand Wash Only", "Other / Custom..."],
-    "occasions": ["Festive", "Casual", "Daily", "Party", "Wedding", "Fusion", "Work", "Other / Custom..."],
-    "packages": ["1 Kurta, 1 Pant", "1 Kurta, 1 Pant, 1 Dupatta", "1 Kurta", "1 Kurta, 1 Salwar", "1 Kurta, 1 Palazzo", "Other / Custom..."]
+    "colors": [
+        "White",
+        "Black",
+        "Multi",
+        "Off White",
+        "Navy Blue",
+        "Mustard",
+        "Pink",
+        "Red",
+        "Green",
+        "Yellow",
+        "Maroon",
+        "Beige",
+        "Purple",
+        "Grey",
+        "Teal",
+        "Coral",
+        "Other / Custom...",
+    ],
+    "fabrics": [
+        "Pure Cotton",
+        "Cotton Blend",
+        "Cotton Silk",
+        "Silk Blend",
+        "Georgette",
+        "Chanderi",
+        "Rayon",
+        "Organza",
+        "Tissue",
+        "Modal",
+        "Satin",
+        "Linen Blend",
+        "Other / Custom...",
+    ],
+    "top_patterns": [
+        "Embroidered",
+        "Printed",
+        "Solid",
+        "Woven Design",
+        "Yoke Design",
+        "Self Design",
+        "Striped",
+        "Checked",
+        "Colourblocked",
+        "Other / Custom...",
+    ],
+    "print_types": [
+        "Floral",
+        "Geometric",
+        "Paisley",
+        "Ethnic Motifs",
+        "Abstract",
+        "Solid",
+        "Tribal",
+        "Chevron",
+        "Tie and Dye",
+        "Polka Dot",
+        "Other / Custom...",
+    ],
+    "neck_styles": [
+        "V-Neck",
+        "Round Neck",
+        "Mandarin Collar",
+        "Sweetheart Neck",
+        "Boat Neck",
+        "Square Neck",
+        "Halter Neck",
+        "Shirt Collar",
+        "Scoop Neck",
+        "Keyhole Neck",
+        "Other / Custom...",
+    ],
+    "sleeve_lengths": [
+        "Three-Quarter Sleeves",
+        "Short Sleeves",
+        "Long Sleeves",
+        "Sleeveless",
+        "Other / Custom...",
+    ],
+    "shapes": [
+        "Straight",
+        "A-Line",
+        "Anarkali",
+        "Flared",
+        "Kaftan",
+        "Pathani",
+        "Other / Custom...",
+    ],
+    "weave_types": [
+        "Machine Weave",
+        "Handloom",
+        "Regular",
+        "Knitted",
+        "Powerloom",
+        "Other / Custom...",
+    ],
+    "wash_cares": [
+        "Dry Clean",
+        "Hand Wash",
+        "Machine Wash",
+        "Dry Clean Only",
+        "Hand Wash Only",
+        "Other / Custom...",
+    ],
+    "occasions": [
+        "Festive",
+        "Casual",
+        "Daily",
+        "Party",
+        "Wedding",
+        "Fusion",
+        "Work",
+        "Other / Custom...",
+    ],
+    "packages": [
+        "1 Kurta, 1 Pant",
+        "1 Kurta, 1 Pant, 1 Dupatta",
+        "1 Kurta",
+        "1 Kurta, 1 Salwar",
+        "1 Kurta, 1 Palazzo",
+        "Other / Custom...",
+    ],
 }
 
 st.title("👗 Apparel Catalog & Multi-Marketplace Hub")
@@ -60,9 +174,9 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
     edit_key = st.session_state.get("edit_product_key", None)
     is_edit = edit_key is not None and edit_key in db
     curr_data = db[edit_key] if is_edit else {}
-    
+
     st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Garment to Catalog'}**")
-    
+
     with st.form("product_form"):
         f1, f2, f3 = st.columns(3)
         with f1:
@@ -134,13 +248,19 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             pkg = st.text_input("Type Custom Package", value=pkg_def) if pkg_choice == "Other / Custom..." else pkg_choice
 
             sz_list = st.multiselect(
-                "Available Sizes*", 
-                ["XS", "S", "M", "L", "XL", "2XL", "3XL"], 
-                default=curr_data.get("sizes", ["S", "M", "L", "XL", "2XL"])
+                "Available Sizes*",
+                ["XS", "S", "M", "L", "XL", "2XL", "3XL"],
+                default=curr_data.get("sizes", ["S", "M", "L", "XL", "2XL"]),
             )
 
         st.markdown("---")
-        desc = st.text_area("Product Description", value=curr_data.get("description", "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day."))
+        desc = st.text_area(
+            "Product Description",
+            value=curr_data.get(
+                "description",
+                "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.",
+            ),
+        )
         img_urls = st.text_area("Image URLs (1 link per line)", value="\n".join(curr_data.get("images", [])))
 
         save_c1, save_c2 = st.columns([1, 4])
@@ -162,9 +282,9 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                 "L": {"Across Shoulder": 15.0, "Bust": 40.0, "Chest": 40.0, "Front Length": 29.0, "Hips": 38.0, "Waist": 34.0, "Inseam Length": 24.3},
                 "XL": {"Across Shoulder": 15.5, "Bust": 42.0, "Chest": 42.0, "Front Length": 29.0, "Hips": 40.0, "Waist": 36.0, "Inseam Length": 23.8},
                 "2XL": {"Across Shoulder": 16.0, "Bust": 44.0, "Chest": 44.0, "Front Length": 29.0, "Hips": 42.0, "Waist": 38.0, "Inseam Length": 22.0},
-                "3XL": {"Across Shoulder": 16.5, "Bust": 46.0, "Chest": 46.0, "Front Length": 29.0, "Hips": 44.0, "Waist": 40.0, "Inseam Length": 22.0}
+                "3XL": {"Across Shoulder": 16.5, "Bust": 46.0, "Chest": 46.0, "Front Length": 29.0, "Hips": 44.0, "Waist": 40.0, "Inseam Length": 22.0},
             }
-            
+
             db[d_code] = {
                 "design_code": d_code,
                 "title_core": t_core,
@@ -186,7 +306,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                 "net_qty": 1,
                 "description": desc,
                 "measurements": {sz: std_measurements.get(sz, {}) for sz in sz_list},
-                "images": [u.strip() for u in img_urls.splitlines() if u.strip()]
+                "images": [u.strip() for u in img_urls.splitlines() if u.strip()],
             }
             save_db(db)
             st.session_state["show_add_modal"] = False
@@ -214,11 +334,11 @@ else:
             "Shape": item.get("shape"),
             "MRP (₹)": item.get("mrp"),
             "Price (₹)": item.get("selling_price"),
-            "Sizes": ", ".join(item.get("sizes", []))
+            "Sizes": ", ".join(item.get("sizes", [])),
         })
 
     df_catalog = pd.DataFrame(table_data)
-    
+
     edited_df = st.data_editor(
         df_catalog,
         column_config={
@@ -228,11 +348,11 @@ else:
         },
         disabled=[c for c in df_catalog.columns if c != "Select"],
         hide_index=True,
-        use_container_width=True
+        use_container_width=True,
     )
 
     selected_designs = edited_df[edited_df["Select"] == True]["Design Code"].tolist()
-    
+
     if st.session_state.get("trigger_delete", False):
         if not selected_designs:
             st.warning("Please tick the checkbox next to the product(s) you want to delete.")
@@ -257,14 +377,14 @@ else:
     # 3. LISTING HUB (AUTOMATED PARENT-CHILD & TEMPLATE GENERATION)
     # ==============================================================================
     st.subheader("🚀 List Selected Products")
-    
+
     if not selected_designs:
         st.write("👈 *Tick one or more products in the catalog table above to configure and generate listing files.*")
     else:
         st.success(f"Selected **{len(selected_designs)}** product(s): **{', '.join(selected_designs)}**")
-        
+
         c_plat, c_brand, c_tpl = st.columns([1.5, 2, 2.5])
-        
+
         with c_plat:
             marketplace = st.selectbox("Select Target Marketplace", ["Myntra", "Amazon.in"])
             default_cat = "Kurta Sets" if marketplace == "Myntra" else "KURTA"
@@ -275,19 +395,19 @@ else:
                 selected_brands = st.multiselect(
                     "Select Brands to Generate",
                     ["KALINI", "MITERA", "PERVAS"],
-                    default=["KALINI", "MITERA", "PERVAS"]
+                    default=["KALINI", "MITERA", "PERVAS"],
                 )
             else:
                 selected_brands = st.multiselect(
                     "Select Brand(s)",
                     ["PERVAS", "BLUE RIBBON"],
-                    default=["PERVAS"]
+                    default=["PERVAS"],
                 )
 
         with c_tpl:
             uploaded_template = st.file_uploader(
                 f"Upload Latest {marketplace} Template (.xlsx / .xlsm)",
-                type=["xlsx", "xlsm"]
+                type=["xlsx", "xlsm"],
             )
 
         if st.button(f"⚡ Generate {marketplace} Bulk Upload File for {len(selected_designs)} Product(s)", type="primary", use_container_width=True):
@@ -302,7 +422,7 @@ else:
                 out_mime = "application/vnd.ms-excel.sheet.macroEnabled.12" if is_xlsm else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
                 wb = openpyxl.load_workbook(uploaded_template, keep_vba=keep_vba_flag)
-                
+
                 # Sheet Detection
                 if marketplace == "Myntra":
                     sheet_name = "Kurta Sets" if "set" in category_val.lower() else "Kurtas"
@@ -316,17 +436,31 @@ else:
 
                 # Build column mapping from headers
                 col_map = {}
+                header_names = []
                 for c in range(1, ws.max_column + 1):
                     h_val = ws.cell(row=header_row, column=c).value
                     if h_val:
                         col_name_clean = str(h_val).strip()
                         if col_name_clean not in col_map:
                             col_map[col_name_clean] = []
+                            header_names.append(col_name_clean)
                         col_map[col_name_clean].append(c)
 
                 def write_cell(row_idx, col_name, value, occurrence=0):
-                    if col_name in col_map and value is not None:
-                        cols = col_map[col_name]
+                    if value is None:
+                        return
+
+                    target_col_name = None
+                    if col_name in col_map:
+                        target_col_name = col_name
+                    elif header_names:
+                        # Fuzzy match fallback to handle minor template header variations
+                        match, score, _ = process.extractOne(col_name, header_names, scorer=fuzz.token_sort_ratio)
+                        if score >= 88:
+                            target_col_name = match
+
+                    if target_col_name and target_col_name in col_map:
+                        cols = col_map[target_col_name]
                         if occurrence < len(cols):
                             ws.cell(row=row_idx, column=cols[occurrence], value=value)
 
@@ -335,7 +469,7 @@ else:
 
                 for d_name in selected_designs:
                     prod = db[d_name]
-                    
+
                     for brand in selected_brands:
                         # ------------------------------------------------------
                         # AMAZON: PARENT ROW GENERATION FIRST
@@ -343,7 +477,7 @@ else:
                         if marketplace == "Amazon.in":
                             parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
                             parent_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} {prod.get('top_pattern', 'Printed')} Kurta Pant Set ({prod.get('design_code')})"
-                            
+
                             p_row = {
                                 "Status": "Active",
                                 "Title": parent_title,
@@ -380,7 +514,7 @@ else:
                                 "Country of Origin": "India",
                                 "Skip Offer": "No",
                                 "Item Condition": "New",
-                                "Offer Condition Note": "New"
+                                "Offer Condition Note": "New",
                             }
 
                             for col_name, val in p_row.items():
@@ -404,7 +538,6 @@ else:
                         # CHILD ROWS GENERATION (AMAZON & MYNTRA)
                         # ------------------------------------------------------
                         for sz in prod.get("sizes", []):
-                            # Size Standardization: Amazon uses '2XL', Myntra uses 'XXL'
                             amz_size = "2XL" if sz.upper() in ["2XL", "XXL"] else sz
                             myntra_size = "XXL" if sz.upper() in ["2XL", "XXL"] else sz
 
@@ -414,7 +547,7 @@ else:
                                 sku = f"{brand}-P-{prod.get('design_code')}-{myntra_size}"
                                 art_num = f"{brand}-P-{prod.get('design_code')}"
                                 display_name = f"{brand} {prod.get('color', '')} {prod.get('title_core', '')}"
-                                
+
                                 m_row = {
                                     "styleGroupId": group_id_counter,
                                     "vendorSkuCode": sku,
@@ -460,7 +593,7 @@ else:
                                     "Front Length ( Inches )": m.get("Front Length"),
                                     "Hips ( Inches )": m.get("Hips"),
                                     "Waist ( Inches )": m.get("Waist"),
-                                    "Inseam Length ( Inches )": m.get("Inseam Length")
+                                    "Inseam Length ( Inches )": m.get("Inseam Length"),
                                 }
                                 for col_name, val in m_row.items():
                                     write_cell(current_row, col_name, val)
@@ -470,7 +603,7 @@ else:
                                 child_sku = f"{brand}-{prod.get('design_code')}-{prod.get('color', 'Clr')}-{amz_size}"
                                 parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
                                 child_title = f"{brand} Women's {prod.get('fabric', 'Cotton')} Kurta Pant Set ({prod.get('design_code')} {prod.get('color', '')} {amz_size})"
-                                
+
                                 c_row = {
                                     "Status": "Active",
                                     "Title": child_title,
@@ -537,7 +670,7 @@ else:
                                     "Item Package Height": 3.0,
                                     "Package Height Unit": "Centimeters",
                                     "Package Weight": 450.0,
-                                    "Package Weight Unit": "Grams"
+                                    "Package Weight Unit": "Grams",
                                 }
 
                                 for col_name, val in c_row.items():
@@ -562,11 +695,23 @@ else:
                 output.seek(0)
 
                 total_rows = current_row - start_row
-                st.success(f"🎉 Generated {total_rows} total rows across {len(selected_designs)} style(s) and {len(selected_brands)} brand(s)!")
-                st.download_button(
-                    label=f"📥 Download Bulk Upload Sheet ({marketplace})",
-                    data=output,
-                    file_name=f"{marketplace}_bulk_listing_{len(selected_designs)}_styles{out_ext}",
-                    mime=out_mime,
-                    use_container_width=True
-                )
+                st.session_state["generated_file"] = {
+                    "data": output.getvalue(),
+                    "filename": f"{marketplace}_bulk_listing_{len(selected_designs)}_styles{out_ext}",
+                    "mime": out_mime,
+                    "rows": total_rows,
+                    "designs_count": len(selected_designs),
+                    "brands_count": len(selected_brands),
+                    "marketplace": marketplace,
+                }
+
+        if "generated_file" in st.session_state:
+            gen = st.session_state["generated_file"]
+            st.success(f"🎉 Generated {gen['rows']} total rows across {gen['designs_count']} style(s) and {gen['brands_count']} brand(s)!")
+            st.download_button(
+                label=f"📥 Download Bulk Upload Sheet ({gen['marketplace']})",
+                data=gen["data"],
+                file_name=gen["filename"],
+                mime=gen["mime"],
+                use_container_width=True,
+            )
