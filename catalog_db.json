@@ -344,7 +344,7 @@
     "color_variants": [
       {
         "color_name": "Maroon",
-        "color_map": "Maroon",
+        "color_map": "Red",
         "images": []
       },
       {
@@ -354,7 +354,7 @@
       },
       {
         "color_name": "Blue",
-        "color_map": "Navy Blue",
+        "color_map": "Blue",
         "images": []
       },
       {
