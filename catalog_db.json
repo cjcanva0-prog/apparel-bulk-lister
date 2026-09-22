@@ -1438,5 +1438,96 @@
         "images": []
       }
     ]
+  },
+  "Toxic": {
+    "design_code": "Toxic",
+    "title_core": "Cotton Blend Printed Kurta Set with Pants",
+    "fabric": "Cotton Blend",
+    "top_pattern": "Printed",
+    "print_type": "Geometric",
+    "neck": "Round Neck",
+    "sleeve_length": "Sleeveless",
+    "shape": "Straight",
+    "top_length": "Calf Length",
+    "weave": "Machine Weave",
+    "wash_care": "Dry Clean",
+    "occasion": "Daily",
+    "mrp": 3999,
+    "selling_price": 3999,
+    "hsn": "62114210",
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL",
+      "2XL"
+    ],
+    "package_contains": "1 Kurta, 1 Pant",
+    "net_qty": 1,
+    "description": "The Fabric Feel: Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.\n\nThe Visual Charm: You will absolutely love the delicate floral print blooming across the fabric, perfectly highlighted by charming lace borders for a soft, romantic vibe.\n\nThe Silhouette: The classic  flared fit drapes beautifully to flatter your shape, perfectly balanced by elegant three-quarter sleeves and a gorgeous neckline.\n\nThe Complete Set: It takes the guesswork out of dressing up with a perfectly coordinated palazzo and a gracefully draped, matching dupatta.\n\nStyle It Your Way: Whether you are heading to a festive daytime brunch or looking for an elevated casual office look, this versatile set is ready for any occasion.",
+    "measurements": {
+      "S": {
+        "Across Shoulder": 14.0,
+        "Bust": 36.0,
+        "Chest": 36.0,
+        "Front Length": 29.0,
+        "Hips": 34.0,
+        "Waist": 30.0,
+        "Inseam Length": 25.0
+      },
+      "M": {
+        "Across Shoulder": 14.5,
+        "Bust": 38.0,
+        "Chest": 38.0,
+        "Front Length": 29.0,
+        "Hips": 36.0,
+        "Waist": 32.0,
+        "Inseam Length": 24.8
+      },
+      "L": {
+        "Across Shoulder": 15.0,
+        "Bust": 40.0,
+        "Chest": 40.0,
+        "Front Length": 29.0,
+        "Hips": 38.0,
+        "Waist": 34.0,
+        "Inseam Length": 24.3
+      },
+      "XL": {
+        "Across Shoulder": 15.5,
+        "Bust": 42.0,
+        "Chest": 42.0,
+        "Front Length": 29.0,
+        "Hips": 40.0,
+        "Waist": 36.0,
+        "Inseam Length": 23.8
+      },
+      "2XL": {
+        "Across Shoulder": 16.0,
+        "Bust": 44.0,
+        "Chest": 44.0,
+        "Front Length": 29.0,
+        "Hips": 42.0,
+        "Waist": 38.0,
+        "Inseam Length": 22.0
+      }
+    },
+    "color_variants": [
+      {
+        "color_name": "Blue",
+        "color_map": "Blue",
+        "images": []
+      },
+      {
+        "color_name": "Grey",
+        "color_map": "Grey",
+        "images": []
+      },
+      {
+        "color_name": "Red",
+        "color_map": "Red",
+        "images": []
+      }
+    ]
   }
 }
