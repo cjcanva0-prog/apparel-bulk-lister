@@ -49,6 +49,8 @@ def load_db():
                                 "images": v.get("images", []),
                             }
                         ]
+                    if "top_length" not in v:
+                        v["top_length"] = "Knee Length"
                 return data
         except Exception:
             pass
@@ -66,6 +68,8 @@ def load_db():
                                 "images": v.get("images", []),
                             }
                         ]
+                    if "top_length" not in v:
+                        v["top_length"] = "Knee Length"
                 return data
             except Exception:
                 return {}
@@ -150,6 +154,17 @@ COLOR_MAPPER = {
     "Other / Custom...": "Other / Custom...",
 }
 
+# Unified Length Mapping: Selection -> (Myntra Top Length, Amazon Item Length Description)
+LENGTH_MAPPER = {
+    "Knee Length": ("Knee Length", "Knee Length"),
+    "Calf Length": ("Calf Length", "Calf Length"),
+    "Above Knee": ("Above Knee", "Mid Thigh Length"),
+    "Floor Length": ("Floor Length", "Floor Length"),
+    "Ankle Length": ("Calf Length", "Ankle Length"),
+    "Short / Hip Length": ("Short", "Hip Length"),
+    "Other / Custom...": ("Knee Length", "Knee Length"),
+}
+
 DROPDOWNS = {
     "colors": list(COLOR_MAPPER.keys()),
     "amazon_color_maps": [
@@ -157,6 +172,7 @@ DROPDOWNS = {
         "Green", "Grey", "Metallic", "Multicolor", "Off White", "Orange",
         "Pink", "Purple", "Red", "Silver", "Turquoise", "White", "Yellow",
     ],
+    "top_lengths": list(LENGTH_MAPPER.keys()),
     "fabrics": [
         "Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette",
         "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend",
@@ -289,6 +305,12 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             shp_choice = st.selectbox("Kurta Shape / Fit*", DROPDOWNS["shapes"], index=shp_idx)
             shp = st.text_input("Type Custom Shape", value=shp_def) if shp_choice == "Other / Custom..." else shp_choice
 
+            # 1 Single Field for Top Length / Item Length Description
+            len_def = curr_data.get("top_length", "Knee Length")
+            len_idx = DROPDOWNS["top_lengths"].index(len_def) if len_def in DROPDOWNS["top_lengths"] else 0
+            len_choice = st.selectbox("Kurta / Top Length*", DROPDOWNS["top_lengths"], index=len_idx)
+            top_len_val = st.text_input("Type Custom Length", value=len_def) if len_choice == "Other / Custom..." else len_choice
+
             wev_def = curr_data.get("weave", "Machine Weave")
             wev_idx = DROPDOWNS["weave_types"].index(wev_def) if wev_def in DROPDOWNS["weave_types"] else len(DROPDOWNS["weave_types"]) - 1
             wev_choice = st.selectbox("Weave Type*", DROPDOWNS["weave_types"], index=wev_idx)
@@ -339,7 +361,6 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                     col_name = col_name_sel
 
             with c_col2:
-                # Automatically map corresponding Amazon filter bucket
                 suggested_map = COLOR_MAPPER.get(col_name_sel, "Multicolor")
                 map_idx = DROPDOWNS["amazon_color_maps"].index(suggested_map) if suggested_map in DROPDOWNS["amazon_color_maps"] else 0
                 col_map_choice = st.selectbox(
@@ -400,6 +421,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                 "neck": nck,
                 "sleeve_length": slv,
                 "shape": shp,
+                "top_length": top_len_val,
                 "weave": wev,
                 "wash_care": wsh,
                 "occasion": occ,
@@ -419,7 +441,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.rerun()
 
     if st.button("➕ Add Another Color Variant to this Style"):
-        st.session_state["temp_colors"].append({"color_name": "White", "color_map": "White", "images": ""})
+        st.session_state["temp_colors"].append({"color_name": "", "color_map": "White", "images": ""})
         st.rerun()
 
 # ==============================================================================
@@ -441,6 +463,7 @@ else:
             "Neck": item.get("neck"),
             "Sleeve": item.get("sleeve_length"),
             "Shape": item.get("shape"),
+            "Top Length": item.get("top_length", "Knee Length"),
             "MRP (₹)": item.get("mrp"),
             "Price (₹)": item.get("selling_price"),
             "Sizes": ", ".join(item.get("sizes", [])),
@@ -583,6 +606,12 @@ else:
                     prod = db[d_name]
                     colorways = prod.get("color_variants", [{"color_name": "White", "color_map": "White", "images": []}])
 
+                    # Determine length mappings
+                    user_top_len = prod.get("top_length", "Knee Length")
+                    len_tuple = LENGTH_MAPPER.get(user_top_len, (user_top_len, user_top_len))
+                    myntra_top_len_val = len_tuple[0]
+                    amazon_item_len_val = len_tuple[1]
+
                     for brand in selected_brands:
                         # ------------------------------------------------------
                         # AMAZON: 1 SINGLE PARENT ROW FOR THE WHOLE DESIGN
@@ -613,7 +642,7 @@ else:
                                 "Fabric Type": prod.get("fabric", "Cotton"),
                                 "Material": prod.get("fabric", "Cotton"),
                                 "Item Type Name": category_val.upper(),
-                                "Item Length Description": "Knee Length",
+                                "Item Length Description": amazon_item_len_val,
                                 "Occasion": prod.get("occasion", "Festive"),
                                 "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
                                 "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
@@ -705,6 +734,7 @@ else:
                                         "Neck": prod.get("neck"),
                                         "Sleeve Length": prod.get("sleeve_length"),
                                         "Top Shape": prod.get("shape"),
+                                        "Top Length": myntra_top_len_val,
                                         "Bottom Fabric": prod.get("fabric"),
                                         "Bottom Pattern": prod.get("top_pattern"),
                                         "Bottom Closure": "NA",
@@ -778,7 +808,7 @@ else:
                                         "Material": prod.get("fabric", "Cotton"),
                                         "Pattern": prod.get("print_type", "Floral"),
                                         "Item Type Name": category_val.upper(),
-                                        "Item Length Description": "Knee Length",
+                                        "Item Length Description": amazon_item_len_val,
                                         "Occasion": prod.get("occasion", "Festive"),
                                         "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
                                         "Manufacturer": "Pervas, Surat, Gujarat - 395010",
