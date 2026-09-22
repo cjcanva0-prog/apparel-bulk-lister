@@ -108,53 +108,96 @@ def save_db(data):
 
 db = load_db()
 
+# Comprehensive Mapped Color Dictionary (Cross-Platform)
+COLOR_MAPPER = {
+    "White": "White",
+    "Off White": "Off White",
+    "Cream": "Off White",
+    "Beige": "Beige",
+    "Black": "Black",
+    "Navy Blue": "Blue",
+    "Blue": "Blue",
+    "Teal": "Turquoise",
+    "Turquoise Blue": "Turquoise",
+    "Green": "Green",
+    "Olive": "Green",
+    "Sea Green": "Green",
+    "Lime Green": "Green",
+    "Mustard": "Yellow",
+    "Yellow": "Yellow",
+    "Maroon": "Red",
+    "Red": "Red",
+    "Burgundy": "Red",
+    "Rust": "Orange",
+    "Orange": "Orange",
+    "Coral": "Pink",
+    "Peach": "Pink",
+    "Pink": "Pink",
+    "Fuchsia": "Pink",
+    "Magenta": "Pink",
+    "Purple": "Purple",
+    "Lavender": "Purple",
+    "Mauve": "Purple",
+    "Brown": "Brown",
+    "Coffee Brown": "Brown",
+    "Charcoal": "Grey",
+    "Grey": "Grey",
+    "Gold": "Gold",
+    "Silver": "Silver",
+    "Bronze": "Bronze",
+    "Copper": "Bronze",
+    "Multi": "Multicolor",
+    "Other / Custom...": "Other / Custom...",
+}
+
 DROPDOWNS = {
-    "colors": [
-        "White", "Black", "Multi", "Off White", "Navy Blue", "Mustard", "Pink", 
-        "Red", "Green", "Yellow", "Maroon", "Beige", "Purple", "Grey", "Teal", 
-        "Coral", "Other / Custom..."
+    "colors": list(COLOR_MAPPER.keys()),
+    "amazon_color_maps": [
+        "Beige", "Black", "Blue", "Bronze", "Brown", "Clear", "Gold",
+        "Green", "Grey", "Metallic", "Multicolor", "Off White", "Orange",
+        "Pink", "Purple", "Red", "Silver", "Turquoise", "White", "Yellow",
     ],
     "fabrics": [
-        "Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette", 
-        "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend", 
-        "Other / Custom..."
+        "Pure Cotton", "Cotton Blend", "Cotton Silk", "Silk Blend", "Georgette",
+        "Chanderi", "Rayon", "Organza", "Tissue", "Modal", "Satin", "Linen Blend",
+        "Other / Custom...",
     ],
     "top_patterns": [
-        "Embroidered", "Printed", "Solid", "Woven Design", "Yoke Design", 
-        "Self Design", "Striped", "Checked", "Colourblocked", "Other / Custom..."
+        "Embroidered", "Printed", "Solid", "Woven Design", "Yoke Design",
+        "Self Design", "Striped", "Checked", "Colourblocked", "Other / Custom...",
     ],
     "print_types": [
-        "Floral", "Geometric", "Paisley", "Ethnic Motifs", "Abstract", "Solid", 
-        "Tribal", "Chevron", "Tie and Dye", "Polka Dot", "Other / Custom..."
+        "Floral", "Geometric", "Paisley", "Ethnic Motifs", "Abstract", "Solid",
+        "Tribal", "Chevron", "Tie and Dye", "Polka Dot", "Other / Custom...",
     ],
     "neck_styles": [
-        "V-Neck", "Round Neck", "Mandarin Collar", "Sweetheart Neck", "Boat Neck", 
-        "Square Neck", "Halter Neck", "Shirt Collar", "Scoop Neck", "Keyhole Neck", 
-        "Other / Custom..."
+        "V-Neck", "Round Neck", "Mandarin Collar", "Sweetheart Neck", "Boat Neck",
+        "Square Neck", "Halter Neck", "Shirt Collar", "Scoop Neck", "Keyhole Neck",
+        "Other / Custom...",
     ],
     "sleeve_lengths": [
-        "Three-Quarter Sleeves", "Short Sleeves", "Long Sleeves", "Sleeveless", 
-        "Other / Custom..."
+        "Three-Quarter Sleeves", "Short Sleeves", "Long Sleeves", "Sleeveless",
+        "Other / Custom...",
     ],
     "shapes": [
-        "Straight", "A-Line", "Anarkali", "Flared", "Kaftan", "Pathani", 
-        "Other / Custom..."
+        "Straight", "A-Line", "Anarkali", "Flared", "Kaftan", "Pathani",
+        "Other / Custom...",
     ],
     "weave_types": [
-        "Machine Weave", "Handloom", "Regular", "Knitted", "Powerloom", 
-        "Other / Custom..."
+        "Machine Weave", "Handloom", "Regular", "Knitted", "Powerloom",
+        "Other / Custom...",
     ],
     "wash_cares": [
-        "Dry Clean", "Hand Wash", "Machine Wash", "Dry Clean Only", 
-        "Hand Wash Only", "Other / Custom..."
+        "Dry Clean", "Hand Wash", "Machine Wash", "Dry Clean Only",
+        "Hand Wash Only", "Other / Custom...",
     ],
     "occasions": [
-        "Festive", "Casual", "Daily", "Party", "Wedding", "Fusion", "Work", 
-        "Other / Custom..."
+        "Festive", "Casual", "Daily", "Party", "Wedding", "Fusion", "Work",
+        "Other / Custom...",
     ],
     "packages": [
-        "1 Kurta, 1 Pant", "1 Kurta, 1 Pant, 1 Dupatta", "1 Kurta", 
-        "1 Kurta, 1 Salwar", "1 Kurta, 1 Palazzo", "Other / Custom..."
+        "1 Kurta, 1 Pant", "1 Kurta, 1 Pant, 1 Dupatta", "1 Kurta",
+        "1 Kurta, 1 Salwar", "1 Kurta, 1 Palazzo", "Other / Custom...",
     ],
 }
 
@@ -280,21 +323,32 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
 
         st.markdown("---")
         st.markdown("### 🎨 Color Variants & Image Sets")
-        st.caption("Add every color this design is manufactured in. Each color gets its own images and color code.")
+        st.caption("Pick from 37+ ethnic colors. The Amazon filter bucket will map automatically.")
 
         updated_color_variants = []
         for idx, cv in enumerate(st.session_state["temp_colors"]):
             st.markdown(f"**Colorway #{idx + 1}**")
             c_col1, c_col2, c_col3 = st.columns([1.5, 1.5, 3])
             with c_col1:
-                col_name = st.text_input(f"Color Name #{idx + 1}", value=cv["color_name"], key=f"cname_{idx}")
+                cur_c = cv.get("color_name", "White")
+                c_idx = DROPDOWNS["colors"].index(cur_c) if cur_c in DROPDOWNS["colors"] else 0
+                col_name_sel = st.selectbox(f"Color Name #{idx + 1}", DROPDOWNS["colors"], index=c_idx, key=f"cname_{idx}")
+                if col_name_sel == "Other / Custom...":
+                    col_name = st.text_input(f"Type Custom Color #{idx + 1}", value=cur_c if cur_c != "Other / Custom..." else "", key=f"ccustom_{idx}")
+                else:
+                    col_name = col_name_sel
+
             with c_col2:
+                # Automatically map corresponding Amazon filter bucket
+                suggested_map = COLOR_MAPPER.get(col_name_sel, "Multicolor")
+                map_idx = DROPDOWNS["amazon_color_maps"].index(suggested_map) if suggested_map in DROPDOWNS["amazon_color_maps"] else 0
                 col_map_choice = st.selectbox(
-                    f"Standard Color Map #{idx + 1}",
-                    DROPDOWNS["colors"][:-1],
-                    index=DROPDOWNS["colors"][:-1].index(cv["color_map"]) if cv["color_map"] in DROPDOWNS["colors"][:-1] else 0,
+                    f"Amazon Filter Bucket #{idx + 1}",
+                    DROPDOWNS["amazon_color_maps"],
+                    index=map_idx,
                     key=f"cmap_{idx}",
                 )
+
             with c_col3:
                 img_text = st.text_area(f"Images for {col_name} (1 URL per line)", value=cv["images"], key=f"cimg_{idx}", height=70)
 
@@ -365,7 +419,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.rerun()
 
     if st.button("➕ Add Another Color Variant to this Style"):
-        st.session_state["temp_colors"].append({"color_name": "", "color_map": "White", "images": ""})
+        st.session_state["temp_colors"].append({"color_name": "White", "color_map": "White", "images": ""})
         st.rerun()
 
 # ==============================================================================
@@ -486,9 +540,9 @@ else:
                 else:
                     ws = wb["Template"] if "Template" in wb.sheetnames else wb.active
                     header_row = 4
-                    start_row = 7
+                    start_row = 7  # Amazon data starts at row 7
 
-                    # Clear row 6 dummy example data so it doesn't pollute the file
+                    # Clear row 6 dummy example data
                     for c in range(1, ws.max_column + 1):
                         ws.cell(row=6, column=c).value = None
 
