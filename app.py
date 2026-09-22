@@ -1,9 +1,11 @@
+import base64
 import io
 import json
 import os
 import openpyxl
 import pandas as pd
 from rapidfuzz import fuzz, process
+import requests
 import streamlit as st
 
 DB_FILE = "catalog_db.json"
@@ -11,12 +13,52 @@ DB_FILE = "catalog_db.json"
 st.set_page_config(page_title="Apparel Multi-Marketplace Hub", layout="wide")
 
 
+# ==============================================================================
+# GITHUB PERSISTENT SYNC (SECRETS-ENABLED)
+# ==============================================================================
+def get_github_headers():
+    token = st.secrets.get("GITHUB_TOKEN", None)
+    if token:
+        return {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+    return None
+
+
 def load_db():
+    # 1. First attempt to pull the live database from GitHub
+    headers = get_github_headers()
+    if headers and "REPO_NAME" in st.secrets:
+        repo = st.secrets["REPO_NAME"]
+        fpath = st.secrets.get("FILE_PATH", "catalog_db.json")
+        branch = st.secrets.get("BRANCH", "main")
+        url = f"https://api.github.com/repos/{repo}/contents/{fpath}?ref={branch}"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                content_b64 = r.json().get("content", "")
+                data_str = base64.b64decode(content_b64).decode("utf-8")
+                data = json.loads(data_str)
+                # Backward compatibility for older single-color items
+                for k, v in data.items():
+                    if "color_variants" not in v:
+                        v["color_variants"] = [
+                            {
+                                "color_name": v.get("color", "White"),
+                                "color_map": v.get("color", "White"),
+                                "images": v.get("images", []),
+                            }
+                        ]
+                return data
+        except Exception:
+            pass
+
+    # 2. Fallback to container's local file
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r") as f:
             try:
                 data = json.load(f)
-                # Backward compatibility: convert old single-color entries into color_variants list
                 for k, v in data.items():
                     if "color_variants" not in v:
                         v["color_variants"] = [
@@ -33,8 +75,39 @@ def load_db():
 
 
 def save_db(data):
+    # 1. Save locally in active container
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+    # 2. Push direct commit to GitHub repository
+    headers = get_github_headers()
+    if headers and "REPO_NAME" in st.secrets:
+        repo = st.secrets["REPO_NAME"]
+        fpath = st.secrets.get("FILE_PATH", "catalog_db.json")
+        branch = st.secrets.get("BRANCH", "main")
+        url = f"https://api.github.com/repos/{repo}/contents/{fpath}"
+        try:
+            r_get = requests.get(url + f"?ref={branch}", headers=headers, timeout=10)
+            sha = r_get.json().get("sha", None) if r_get.status_code == 200 else None
+
+            content_str = json.dumps(data, indent=2)
+            content_b64 = base64.b64encode(content_str.encode("utf-8")).decode("utf-8")
+
+            payload = {
+                "message": "Auto-sync catalog update from Streamlit Hub",
+                "content": content_b64,
+                "branch": branch,
+            }
+            if sha:
+                payload["sha"] = sha
+
+            r_put = requests.put(url, headers=headers, json=payload, timeout=10)
+            if r_put.status_code in [200, 201]:
+                st.toast("✅ Saved permanently to GitHub!", icon="🎉")
+            else:
+                st.error(f"GitHub Sync Error: {r_put.status_code} - {r_put.text}")
+        except Exception as e:
+            st.error(f"GitHub Sync Connection Failed: {e}")
 
 
 db = load_db()
@@ -169,7 +242,7 @@ st.title("👗 Apparel Catalog & Multi-Marketplace Hub")
 # ==============================================================================
 # 1. CATALOG MANAGEMENT (ADD / EDIT)
 # ==============================================================================
-col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
+col_t1, col_t2, col_t3, col_t4 = st.columns([2, 1, 1, 1])
 with col_t1:
     st.subheader("📦 Master Catalog")
 with col_t2:
@@ -180,6 +253,15 @@ with col_t2:
 with col_t3:
     if st.button("🗑️ Delete Selected", use_container_width=True):
         st.session_state["trigger_delete"] = True
+with col_t4:
+    catalog_json_str = json.dumps(db, indent=2)
+    st.download_button(
+        label="💾 Backup DB",
+        data=catalog_json_str,
+        file_name="catalog_db.json",
+        mime="application/json",
+        use_container_width=True,
+    )
 
 # Add / Edit Form Drawer
 if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_product_key", None):
@@ -189,7 +271,6 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
 
     st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Design to Catalog'}**")
 
-    # Maintain color variants in session state
     if "temp_colors" not in st.session_state or is_edit and st.session_state.get("loaded_edit_key") != edit_key:
         if is_edit:
             st.session_state["temp_colors"] = [
@@ -360,10 +441,8 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             save_db(db)
             st.session_state["show_add_modal"] = False
             st.session_state["edit_product_key"] = None
-            st.success(f"✅ Product '{d_code}' with {len(updated_color_variants)} color variant(s) saved successfully!")
             st.rerun()
 
-    # Button to add another color block
     if st.button("➕ Add Another Color Variant to this Style"):
         st.session_state["temp_colors"].append({"color_name": "", "color_map": "White", "images": ""})
         st.rerun()
@@ -417,7 +496,6 @@ else:
                     del db[d]
             save_db(db)
             st.session_state["trigger_delete"] = False
-            st.success(f"Deleted {len(selected_designs)} product(s) from catalog.")
             st.rerun()
 
     if len(selected_designs) == 1:
@@ -487,7 +565,7 @@ else:
                 else:
                     ws = wb["Template"] if "Template" in wb.sheetnames else wb.active
                     header_row = 4
-                    start_row = 7  # Amazon dataRow=7
+                    start_row = 7  # Amazon data starts at row 7
 
                     # Clear row 6 dummy example data so it doesn't pollute the file
                     for c in range(1, ws.max_column + 1):
@@ -579,7 +657,6 @@ else:
                             for col_name, val in p_row.items():
                                 write_cell(current_row, col_name, val)
 
-                            # Parent uses images of the first colorway
                             first_c_imgs = colorways[0].get("images", [])
                             if first_c_imgs:
                                 write_cell(current_row, "Main Image URL", first_c_imgs[0])
@@ -612,7 +689,7 @@ else:
                                     display_name = f"{brand} {c_name} {prod.get('title_core', '')}"
 
                                     m_row = {
-                                        "styleGroupId": group_id_counter,  # Unique group ID per colorway
+                                        "styleGroupId": group_id_counter,
                                         "vendorSkuCode": sku,
                                         "vendorArticleNumber": art_num,
                                         "vendorArticleName": display_name,
@@ -750,7 +827,6 @@ else:
                                     write_cell(current_row, "Bullet Point", "4. Easy Care & Lasting Style: Durable stitching and long-lasting fabric quality.", occurrence=3)
 
                                 current_row += 1
-                            # Increment styleGroupId for each colorway on Myntra
                             group_id_counter += 1
 
                 output = io.BytesIO()
