@@ -85,7 +85,8 @@
           "https://m.media-amazon.com/images/I/81cFjq0ePkL.jpg"
         ]
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Supriya": {
     "design_code": "Supriya",
@@ -167,7 +168,8 @@
         "color_map": "Multi",
         "images": []
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Bansari": {
     "design_code": "Bansari",
@@ -267,7 +269,8 @@
         "color_map": "Green",
         "images": []
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Batak": {
     "design_code": "Batak",
@@ -362,7 +365,8 @@
         "color_map": "Black",
         "images": []
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Dholki": {
     "design_code": "Dholki",
@@ -457,7 +461,8 @@
         "color_map": "Red",
         "images": []
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Govardhan": {
     "design_code": "Govardhan",
@@ -557,7 +562,8 @@
         "color_map": "Red",
         "images": []
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Hathi": {
     "design_code": "Hathi",
@@ -637,7 +643,8 @@
         "color_map": "White",
         "images": []
       }
-    ]
+    ],
+    "top_length": "Knee Length"
   },
   "Jalebi": {
     "design_code": "Jalebi",
@@ -648,6 +655,7 @@
     "neck": "V-Neck",
     "sleeve_length": "Three-Quarter Sleeves",
     "shape": "Straight",
+    "top_length": "Short / Hip Length",
     "weave": "Machine Weave",
     "wash_care": "Dry Clean",
     "occasion": "Daily",
