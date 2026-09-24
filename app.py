@@ -154,7 +154,6 @@ COLOR_MAPPER = {
     "Other / Custom...": "Other / Custom...",
 }
 
-# Unified Fabric Mapper (Ensures Amazon receives strict dropdown values like 'Cotton')
 FABRIC_MAPPER = {
     "Pure Cotton": "Cotton",
     "Cotton Blend": "Cotton Blend",
@@ -170,7 +169,6 @@ FABRIC_MAPPER = {
     "Linen Blend": "Linen Blend",
 }
 
-# Unified Length Mapping: Selection -> (Myntra Top Length, Amazon Item Length Description)
 LENGTH_MAPPER = {
     "Knee Length": ("Knee Length", "Knee Length"),
     "Calf Length": ("Calf Length", "Calf Length"),
@@ -181,7 +179,6 @@ LENGTH_MAPPER = {
     "Other / Custom...": ("Knee Length", "Knee Length"),
 }
 
-# Amazon exact dropdown size strings matching template validation
 AMAZON_SIZE_MAP = {
     "XS": "XS (x_s)",
     "S": "S (s)",
@@ -194,6 +191,15 @@ AMAZON_SIZE_MAP = {
     "4XL": "4XL",
     "5XL": "5XL"
 }
+
+# Exact Amazon Product Description String Required
+AMAZON_EXACT_DESCRIPTION = (
+    "Elevate your ethnic with this elegant Women's Kurta , designed to blend comfort with timeless style. "
+    "Made from a soft and breathable  fabric, this Kurta featuring delicate white floral embroidery on the sleeves and neckline, "
+    "for a refined look. The neck design, 3/4 elasticated sleeves, provide effortless comfort while maintaining a flattering look. "
+    "Whether you're dressing for work, casual outings, festive occasions, family gatherings, or travel, this kurta keeps you looking "
+    "polished throughout the day. Style it with statement earrings, bangles, and sandals for a graceful ethnic, or keep it minimal for a chic everyday look."
+)
 
 DROPDOWNS = {
     "colors": list(COLOR_MAPPER.keys()),
@@ -331,7 +337,6 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             shp_choice = st.selectbox("Kurta Shape / Fit*", DROPDOWNS["shapes"], index=shp_idx)
             shp = st.text_input("Type Custom Shape", value=shp_def) if shp_choice == "Other / Custom..." else shp_choice
 
-            # 1 Single Field for Top Length / Item Length Description
             len_def = curr_data.get("top_length", "Knee Length")
             len_idx = DROPDOWNS["top_lengths"].index(len_def) if len_def in DROPDOWNS["top_lengths"] else 0
             len_choice = st.selectbox("Kurta / Top Length*", DROPDOWNS["top_lengths"], index=len_idx)
@@ -663,7 +668,7 @@ else:
                                 "Product Id Type": "GTIN Exempt",
                                 "Model Name": prod.get("design_code"),
                                 "Manufacturer": "Pervas, Surat, Gujarat - 395010",
-                                "Product Description": prod.get("description"),
+                                "Product Description": AMAZON_EXACT_DESCRIPTION,
                                 "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
                                 "Lifestyle": "Casual",
                                 "Department Name": "Womens",
@@ -837,7 +842,7 @@ else:
                                         "Maximum Retail Price": prod.get("mrp"),
                                         "Your Price INR (Sell on Amazon, IN)": prod.get("selling_price"),
                                         "Maximum Retail Price (Sell on Amazon, IN)": prod.get("mrp"),
-                                        "Product Description": prod.get("description"),
+                                        "Product Description": AMAZON_EXACT_DESCRIPTION,
                                         "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
                                         "Lifestyle": "Casual",
                                         "Style": prod.get("shape", "Straight"),
