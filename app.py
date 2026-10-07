@@ -112,7 +112,6 @@ def save_db(data):
 
 db = load_db()
 
-# Comprehensive Mapped Color Dictionary (Cross-Platform)
 COLOR_MAPPER = {
     "White": "White",
     "Off White": "Off White",
@@ -560,7 +559,7 @@ else:
                 )
             else:
                 selected_brands = st.multiselect(
-                    "Select Brand(s)",
+                    "Select Brand(s) (Blue Ribbon replaced with Perabin)",
                     ["PERVAS", "PERABIN"],
                     default=["PERVAS"],
                 )
@@ -647,9 +646,12 @@ else:
                     amz_fabric_val = FABRIC_MAPPER.get(raw_fabric, "Cotton")
 
                     for brand in selected_brands:
-                        # Brand-specific contact email assignment
-                        brand_email = "perabin32544@gmail.com" if brand == "PERABIN" else "pervas0007@gmail.com"
-                        brand_contact_info = f"Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010, Email: {brand_email}"
+                        # Brand-specific contact email for Amazon
+                        brand_email = "pervas0007@gmail.com" if brand == "PERVAS" else "perabin32544@gmail.com"
+                        brand_contact_info = (
+                            f"{brand}, 2087, Second Floor, The Palladium Mall, Near Apple Square, "
+                            f"Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010, Email: {brand_email}"
+                        )
 
                         # ------------------------------------------------------
                         # AMAZON: 1 SINGLE PARENT ROW FOR THE WHOLE DESIGN
@@ -704,8 +706,8 @@ else:
                                 "Package Width Unit": "Centimeters",
                                 "Item Package Height": 3.0,
                                 "Package Height Unit": "Centimeters",
-                                "Item Package Weight": 450.0,
-                                "Item Package Weight Unit": "Grams",
+                                "Package Weight": 450.0,
+                                "Package Weight Unit": "Grams",
                             }
 
                             for col_name, val in p_row.items():
