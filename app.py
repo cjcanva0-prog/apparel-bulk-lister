@@ -470,7 +470,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.rerun()
 
     if st.button("➕ Add Another Color Variant to this Style"):
-        st.session_state["temp_colors"].append({"color_name": "White", "color_map": "White", "images": ""})
+        st.session_state["temp_colors"].append({"color_name": "", "color_map": "White", "images": ""})
         st.rerun()
 
 # ==============================================================================
@@ -559,7 +559,7 @@ else:
                 )
             else:
                 selected_brands = st.multiselect(
-                    "Select Brand(s) (Blue Ribbon replaced with Perabin)",
+                    "Select Brand(s)",
                     ["PERVAS", "PERABIN"],
                     default=["PERVAS"],
                 )
@@ -648,10 +648,6 @@ else:
                     for brand in selected_brands:
                         # Brand-specific contact email for Amazon
                         brand_email = "pervas0007@gmail.com" if brand == "PERVAS" else "perabin32544@gmail.com"
-                        brand_contact_info = (
-                            f"{brand}, 2087, Second Floor, The Palladium Mall, Near Apple Square, "
-                            f"Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010, Email: {brand_email}"
-                        )
 
                         # ------------------------------------------------------
                         # AMAZON: 1 SINGLE PARENT ROW FOR THE WHOLE DESIGN
@@ -685,8 +681,8 @@ else:
                                 "Item Length Description": amazon_item_len_val,
                                 "Occasion": prod.get("occasion", "Festive"),
                                 "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
-                                "Manufacturer Contact Information": brand_contact_info,
-                                "Packer Contact Information": brand_contact_info,
+                                "Manufacturer Contact Information": brand_email,
+                                "Packer Contact Information": brand_email,
                                 "Design Name": prod.get("top_pattern", "Embroidered"),
                                 "Neck Style": prod.get("neck", "V-Neck"),
                                 "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
@@ -700,11 +696,11 @@ else:
                                 "Number of Items": 1,
                                 "Item Length Longer Edge": 46.0,
                                 "Item Length Unit": "Centimeters",
-                                "Item Package Length": 25.0,
+                                "Package Length": 25.0,
                                 "Package Length Unit": "Centimeters",
-                                "Item Package Width": 22.0,
+                                "Package Width": 22.0,
                                 "Package Width Unit": "Centimeters",
-                                "Item Package Height": 3.0,
+                                "Package Height": 3.0,
                                 "Package Height Unit": "Centimeters",
                                 "Package Weight": 450.0,
                                 "Package Weight Unit": "Grams",
@@ -863,8 +859,8 @@ else:
                                         "Occasion": prod.get("occasion", "Festive"),
                                         "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
                                         "Manufacturer": brand_email,
-                                        "Manufacturer Contact Information": brand_contact_info,
-                                        "Packer Contact Information": brand_contact_info,
+                                        "Manufacturer Contact Information": brand_email,
+                                        "Packer Contact Information": brand_email,
                                         "Design Name": prod.get("top_pattern", "Embroidered"),
                                         "External Product Information Entity": "HSN Code",
                                         "External Product Information": prod.get("hsn", "62114210"),
@@ -881,11 +877,11 @@ else:
                                         "Number of Items": 1,
                                         "Item Length Longer Edge": 46.0,
                                         "Item Length Unit": "Centimeters",
-                                        "Item Package Length": 25.0,
+                                        "Package Length": 25.0,
                                         "Package Length Unit": "Centimeters",
-                                        "Item Package Width": 22.0,
+                                        "Package Width": 22.0,
                                         "Package Width Unit": "Centimeters",
-                                        "Item Package Height": 3.0,
+                                        "Package Height": 3.0,
                                         "Package Height Unit": "Centimeters",
                                         "Package Weight": 450.0,
                                         "Package Weight Unit": "Grams",
