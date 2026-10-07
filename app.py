@@ -192,7 +192,6 @@ AMAZON_SIZE_MAP = {
     "5XL": "5XL"
 }
 
-# Exact Amazon Product Description String Required
 AMAZON_EXACT_DESCRIPTION = (
     "Elevate your ethnic with this elegant Women's Kurta , designed to blend comfort with timeless style. "
     "Made from a soft and breathable  fabric, this Kurta featuring delicate white floral embroidery on the sleeves and neckline, "
@@ -562,7 +561,7 @@ else:
             else:
                 selected_brands = st.multiselect(
                     "Select Brand(s)",
-                    ["PERVAS", "BLUE RIBBON"],
+                    ["PERVAS", "PERABIN"],
                     default=["PERVAS"],
                 )
 
@@ -648,6 +647,10 @@ else:
                     amz_fabric_val = FABRIC_MAPPER.get(raw_fabric, "Cotton")
 
                     for brand in selected_brands:
+                        # Brand-specific contact email assignment
+                        brand_email = "perabin32544@gmail.com" if brand == "PERABIN" else "pervas0007@gmail.com"
+                        brand_contact_info = f"Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010, Email: {brand_email}"
+
                         # ------------------------------------------------------
                         # AMAZON: 1 SINGLE PARENT ROW FOR THE WHOLE DESIGN
                         # ------------------------------------------------------
@@ -667,7 +670,7 @@ else:
                                 "Brand Name": brand,
                                 "Product Id Type": "GTIN Exempt",
                                 "Model Name": prod.get("design_code"),
-                                "Manufacturer": "Pervas, Surat, Gujarat - 395010",
+                                "Manufacturer": brand_email,
                                 "Product Description": AMAZON_EXACT_DESCRIPTION,
                                 "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
                                 "Lifestyle": "Casual",
@@ -680,8 +683,8 @@ else:
                                 "Item Length Description": amazon_item_len_val,
                                 "Occasion": prod.get("occasion", "Festive"),
                                 "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
-                                "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
-                                "Packer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                "Manufacturer Contact Information": brand_contact_info,
+                                "Packer Contact Information": brand_contact_info,
                                 "Design Name": prod.get("top_pattern", "Embroidered"),
                                 "Neck Style": prod.get("neck", "V-Neck"),
                                 "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
@@ -701,8 +704,8 @@ else:
                                 "Package Width Unit": "Centimeters",
                                 "Item Package Height": 3.0,
                                 "Package Height Unit": "Centimeters",
-                                "Package Weight": 450.0,
-                                "Package Weight Unit": "Grams",
+                                "Item Package Weight": 450.0,
+                                "Item Package Weight Unit": "Grams",
                             }
 
                             for col_name, val in p_row.items():
@@ -857,9 +860,9 @@ else:
                                         "Item Length Description": amazon_item_len_val,
                                         "Occasion": prod.get("occasion", "Festive"),
                                         "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
-                                        "Manufacturer": "Pervas, Surat, Gujarat - 395010",
-                                        "Manufacturer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
-                                        "Packer Contact Information": "Pervas, 2087, Second Floor, The Palladium Mall, Near Apple Square, Yogi Chowk, Varaccha, Surat, Gujarat, India - 395010",
+                                        "Manufacturer": brand_email,
+                                        "Manufacturer Contact Information": brand_contact_info,
+                                        "Packer Contact Information": brand_contact_info,
                                         "Design Name": prod.get("top_pattern", "Embroidered"),
                                         "External Product Information Entity": "HSN Code",
                                         "External Product Information": prod.get("hsn", "62114210"),
