@@ -554,8 +554,8 @@ else:
             if marketplace == "Myntra":
                 selected_brands = st.multiselect(
                     "Select Brands to Generate",
-                    ["KALINI", "MITERA", "PERVAS"],
-                    default=["KALINI", "MITERA", "PERVAS"],
+                    ["KALINI", "MITERA", "PERVAS", "PERABIN"],
+                    default=["KALINI", "MITERA", "PERVAS", "PERABIN"],
                 )
             else:
                 selected_brands = st.multiselect(
