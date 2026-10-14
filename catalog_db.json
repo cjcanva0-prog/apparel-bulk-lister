@@ -1903,5 +1903,96 @@
         "images": []
       }
     ]
+  },
+  "H-JF303-Black": {
+    "design_code": "H-JF303-Black",
+    "title_core": "Floral Cotton Embroidered Gown with Dupatta",
+    "fabric": "Cotton Blend",
+    "top_pattern": "Embroidered",
+    "print_type": "Floral",
+    "neck": "Round Neck",
+    "sleeve_length": "Long Sleeves",
+    "shape": "Anarkali",
+    "top_length": "Calf Length",
+    "weave": "Machine Weave",
+    "wash_care": "Dry Clean",
+    "occasion": "Festive",
+    "mrp": 3999,
+    "selling_price": 3999,
+    "hsn": "62114210",
+    "sizes": [
+      "S",
+      "M",
+      "L",
+      "XL",
+      "2XL",
+      "3XL"
+    ],
+    "package_contains": "1 Kurta, 1 Pant",
+    "net_qty": 1,
+    "description": "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.",
+    "measurements": {
+      "S": {
+        "Across Shoulder": 14.0,
+        "Bust": 36.0,
+        "Chest": 36.0,
+        "Front Length": 29.0,
+        "Hips": 34.0,
+        "Waist": 30.0,
+        "Inseam Length": 25.0
+      },
+      "M": {
+        "Across Shoulder": 14.5,
+        "Bust": 38.0,
+        "Chest": 38.0,
+        "Front Length": 29.0,
+        "Hips": 36.0,
+        "Waist": 32.0,
+        "Inseam Length": 24.8
+      },
+      "L": {
+        "Across Shoulder": 15.0,
+        "Bust": 40.0,
+        "Chest": 40.0,
+        "Front Length": 29.0,
+        "Hips": 38.0,
+        "Waist": 34.0,
+        "Inseam Length": 24.3
+      },
+      "XL": {
+        "Across Shoulder": 15.5,
+        "Bust": 42.0,
+        "Chest": 42.0,
+        "Front Length": 29.0,
+        "Hips": 40.0,
+        "Waist": 36.0,
+        "Inseam Length": 23.8
+      },
+      "2XL": {
+        "Across Shoulder": 16.0,
+        "Bust": 44.0,
+        "Chest": 44.0,
+        "Front Length": 29.0,
+        "Hips": 42.0,
+        "Waist": 38.0,
+        "Inseam Length": 22.0
+      },
+      "3XL": {
+        "Across Shoulder": 16.5,
+        "Bust": 46.0,
+        "Chest": 46.0,
+        "Front Length": 29.0,
+        "Hips": 44.0,
+        "Waist": 40.0,
+        "Inseam Length": 22.0
+      }
+    },
+    "color_variants": [
+      {
+        "color_name": "Black",
+        "color_map": "Black",
+        "images": []
+      }
+    ]
   }
 }
