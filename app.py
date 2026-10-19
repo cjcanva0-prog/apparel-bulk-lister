@@ -496,13 +496,22 @@ with st.sidebar:
         help="Get a 100% free key from aistudio.google.com or store GEMINI_API_KEY in Streamlit Secrets.",
     )
 
-    gemini_model = st.selectbox(
+    model_choice = st.selectbox(
         "Free-Tier Gemini Model",
-        ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        [
+            "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "Custom Model ID...",
+        ],
         index=0,
         help="Free tier in Google AI Studio — multimodal vision + structured JSON.",
     )
-
+    if model_choice == "Custom Model ID...":
+        gemini_model = st.text_input("Enter Custom Model ID", value="gemini-3.8-flash")
+    else:
+        gemini_model = model_choice
+        
     st.markdown("---")
     st.subheader("📑 Load Master Templates")
     st.caption("Upload your Amazon & Myntra templates here so the Add/Edit form can display every field and dropdown from both platforms.")
