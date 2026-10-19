@@ -271,14 +271,19 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
     if ws.data_validations and ws.data_validations.dataValidation:
         for dv in ws.data_validations.dataValidation:
             if dv.type == "list" and dv.formula1:
-                opts = resolve_excel_range(wb, dv.formula1)
+                formula_str = str(dv.formula1).strip()
+                # Ignore dependent Excel formulas (INDIRECT etc.) so dropdowns are clean
+                if formula_str.startswith("="):
+                    continue
+                opts = resolve_excel_range(wb, formula_str)
                 if opts:
+                    clean_opts = [o for o in opts if not str(o).startswith("=")]
                     for cell_range in dv.sqref.ranges:
                         for c_idx in range(cell_range.min_col, cell_range.max_col + 1):
                             if c_idx in col_to_header:
                                 h_name = col_to_header[c_idx]
-                                if not schema[h_name]["options"]:
-                                    schema[h_name]["options"] = opts
+                                if not schema[h_name]["options"] and clean_opts:
+                                    schema[h_name]["options"] = clean_opts
 
     for sname in wb.sheetnames:
         if any(w in sname.lower() for w in ["valid", "drop", "master", "value"]):
@@ -301,7 +306,9 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
                             if cval is not None and str(cval).strip() and str(cval).strip() != v_head_clean:
                                 opts.append(str(cval).strip())
                         if opts:
-                            schema[matched_key]["options"] = list(dict.fromkeys(opts))
+                            clean_opts = [o for o in opts if not str(o).startswith("=")]
+                            if clean_opts:
+                                schema[matched_key]["options"] = list(dict.fromkeys(clean_opts))
 
     uploaded_file.seek(0)
     return schema
@@ -331,7 +338,7 @@ def snap_to_valid_option(target_val: str, options: list) -> str:
 def match_value_to_list(val: str, options: list, default_val: str = "") -> str:
     if not val or not options:
         return default_val
-    clean_opts = [o for o in options if o != "Other / Custom..."]
+    clean_opts = [o for o in options if o != "Other / Custom..." and not str(o).startswith("=")]
     snapped = snap_to_valid_option(val, clean_opts)
     return snapped if snapped else default_val
 
@@ -339,10 +346,10 @@ def match_value_to_list(val: str, options: list, default_val: str = "") -> str:
 # ==============================================================================
 # ONE-WAY REACTIVE CASCADE: CORE ATTRIBUTES -> AMAZON & MYNTRA TABS
 # ==============================================================================
-def compute_baseline_template_maps(core_dict):
+def compute_baseline_template_maps(core_dict, brand="PERVAS"):
     """
     Computes the full baseline dictionary for BOTH Amazon and Myntra templates
-    from the current Core Attributes dictionary.
+    from the current Core Attributes dictionary and active brand.
     """
     d_code = core_dict.get("design_code", "NewStyle")
     t_core = core_dict.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants")
@@ -366,8 +373,7 @@ def compute_baseline_template_maps(core_dict):
     pkg = core_dict.get("package_contains", "1 Kurta, 1 Pant")
     desc = core_dict.get("description", AMAZON_EXACT_DESCRIPTION)
 
-    brand = "PERVAS"
-    brand_email = "pervas0007@gmail.com"
+    brand_email = "pervas0007@gmail.com" if "PERVAS" in brand.upper() else "support@brand.com"
     title_full = f"{brand} Women's {raw_fab} {pat} {t_core} ({d_code})"
 
     amz_base = {
@@ -491,9 +497,10 @@ def set_template_widget_value(platform_prefix, field_name, raw_value, schema_dic
     w_key = f"{platform_prefix}_gran_{field_name}"
     meta = schema_dict.get(field_name, {})
     opts = meta.get("options", [])
-    if opts:
-        snapped = snap_to_valid_option(raw_value, opts)
-        st.session_state[w_key] = snapped if snapped in opts else ""
+    clean_opts = [o for o in opts if not str(o).startswith("=")]
+    if clean_opts:
+        snapped = snap_to_valid_option(raw_value, clean_opts)
+        st.session_state[w_key] = snapped if snapped in clean_opts else ""
     else:
         st.session_state[w_key] = "" if raw_value is None else str(raw_value)
 
@@ -696,11 +703,11 @@ def run_gemini_archive_analysis(api_key, model_name, raw_text, images, amz_schem
         compressed_imgs.append(im_copy)
 
     amz_fields_spec = {
-        k: (v["options"][:35] if v["options"] else "Free Text")
+        k: ([o for o in v["options"] if not str(o).startswith("=")][:35] if v["options"] else "Free Text")
         for k, v in amz_schema.items()
     }
     myn_fields_spec = {
-        k: (v["options"][:35] if v["options"] else "Free Text")
+        k: ([o for o in v["options"] if not str(o).startswith("=")][:35] if v["options"] else "Free Text")
         for k, v in myn_schema.items()
     }
 
@@ -1107,7 +1114,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
         )
 
     # --------------------------------------------------------------------------
-    # TAB 2: ALL AMAZON TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
+    # TAB 2: ALL AMAZON TEMPLATE FIELDS (CLEAN DROPDOWNS - NO INDIRECT FORMULAS)
     # --------------------------------------------------------------------------
     amz_override_inputs = {}
     with tab_amz_all:
@@ -1119,9 +1126,10 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             for idx, (fname, fmeta) in enumerate(amz_schema.items()):
                 col_ui = amz_grid[idx % 3]
                 w_key = f"amz_gran_{fname}"
-                opts = fmeta.get("options", [])
-                if opts:
-                    full_opts = [""] + opts
+                raw_opts = fmeta.get("options", [])
+                clean_opts = [o for o in raw_opts if not str(o).startswith("=")]
+                if clean_opts:
+                    full_opts = [""] + clean_opts
                     if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
                         st.session_state[w_key] = ""
                     amz_override_inputs[fname] = col_ui.selectbox(
@@ -1138,7 +1146,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                     )
 
     # --------------------------------------------------------------------------
-    # TAB 3: ALL MYNTRA TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
+    # TAB 3: ALL MYNTRA TEMPLATE FIELDS (CLEAN DROPDOWNS - NO INDIRECT FORMULAS)
     # --------------------------------------------------------------------------
     myn_override_inputs = {}
     with tab_myn_all:
@@ -1150,9 +1158,10 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             for idx, (fname, fmeta) in enumerate(myn_schema.items()):
                 col_ui = myn_grid[idx % 3]
                 w_key = f"myn_gran_{fname}"
-                opts = fmeta.get("options", [])
-                if opts:
-                    full_opts = [""] + opts
+                raw_opts = fmeta.get("options", [])
+                clean_opts = [o for o in raw_opts if not str(o).startswith("=")]
+                if clean_opts:
+                    full_opts = [""] + clean_opts
                     if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
                         st.session_state[w_key] = ""
                     myn_override_inputs[fname] = col_ui.selectbox(
@@ -1382,12 +1391,13 @@ else:
                     colorways = prod.get("color_variants", [{"color_name": "White", "color_map": "White", "images": []}])
                     amz_ovr = prod.get("amazon_overrides", {})
                     myn_ovr = prod.get("myntra_overrides", {})
-                    amz_base_defaults, myn_base_defaults = compute_baseline_template_maps(prod)
 
                     raw_fabric = prod.get("fabric", "Pure Cotton")
 
                     for brand in selected_brands:
-                        brand_email = "pervas0007@gmail.com" if brand == "PERVAS" else "perabin32544@gmail.com"
+                        # Dynamically calculate baseline template maps based on the selected brand loop
+                        amz_base_defaults, myn_base_defaults = compute_baseline_template_maps(prod, brand=brand)
+                        brand_email = "pervas0007@gmail.com" if "PERVAS" in brand.upper() else "support@brand.com"
 
                         # ------------------------------------------------------
                         # AMAZON PARENT ROW
