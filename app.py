@@ -3,6 +3,7 @@ import datetime
 import io
 import json
 import os
+import re
 import zipfile
 import rarfile
 import openpyxl
@@ -48,6 +49,14 @@ def normalize_db_records(data):
             v["amazon_overrides"] = {}
         if "myntra_overrides" not in v:
             v["myntra_overrides"] = {}
+
+        # FIX: purge garbage values saved earlier by the INDIRECT-formula dropdown bug
+        for ovr_key in ("amazon_overrides", "myntra_overrides"):
+            v[ovr_key] = {
+                k2: val
+                for k2, val in v.get(ovr_key, {}).items()
+                if not str(val).strip().upper().startswith("INDIRECT(")
+            }
     return data
 
 
@@ -215,35 +224,71 @@ DROPDOWNS = {
 # ==============================================================================
 # V2 ENGINE: DYNAMIC TEMPLATE INTROSPECTION & DROPDOWN EXTRACTOR
 # ==============================================================================
-def resolve_excel_range(wb, formula_str):
+def _cells_from_range(ws, rng):
+    """Returns non-empty cell values from a range. Handles single cells like $F$4."""
+    rng = rng.replace("$", "")
+    got = ws[rng]
+    if not isinstance(got, tuple):  # single cell -> openpyxl returns a Cell, not a tuple
+        got = ((got,),)
+    out = []
+    for row in got:
+        for c in (row if isinstance(row, tuple) else (row,)):
+            if c.value is not None and str(c.value).strip() != "":
+                out.append(str(c.value).strip())
+    return out
+
+
+def _values_from_reference(wb, ref):
+    """Resolves a defined name or 'Sheet'!$A$1:$A$9 reference into a list of values."""
+    ref = str(ref).strip()
+    if ref.startswith("="):
+        ref = ref[1:]
+    if ref in wb.defined_names:  # named range -> real range
+        ref = wb.defined_names[ref].attr_text
+    if "!" not in ref:
+        return []
+    sheet_part, range_part = ref.rsplit("!", 1)
+    sheet_name = sheet_part.strip("'").replace("''", "'")
+    if sheet_name not in wb.sheetnames:
+        return []
+    try:
+        vals = _cells_from_range(wb[sheet_name], range_part)
+    except Exception:
+        return []
+    return list(dict.fromkeys(vals))
+
+
+def resolve_excel_range(wb, formula_str, product_type="KURTA"):
+    """
+    Turns a data-validation formula into a list of dropdown options.
+    Supports:
+      1) inline lists wrapped in quotes:   "A,B,C"
+      2) Amazon dependent dropdowns:       INDIRECT(<product type cell> & "attr_name...")
+         (resolved by substituting the product type, e.g. KURTA + "stylemarketplace_id...")
+      3) named ranges and Sheet!A1:A9 ranges
+    """
     if not formula_str:
         return []
-    formula = str(formula_str).strip()
-    if formula.startswith("="):
-        formula = formula[1:]
+    f = str(formula_str).strip()
+    if f.startswith("="):
+        f = f[1:]
 
-    if "," in formula and "!" not in formula and ":" not in formula:
-        return [o.strip().strip('"') for o in formula.split(",") if o.strip()]
+    # 1) Inline literal list — ONLY when wrapped in quotes
+    if f.startswith('"') and f.endswith('"'):
+        return [o.strip() for o in f[1:-1].split(",") if o.strip()]
 
-    if formula in wb.defined_names:
-        defn = wb.defined_names[formula]
-        formula = defn.attr_text
+    # 2) Amazon INDIRECT(...) dependent dropdown
+    if f.upper().startswith("INDIRECT("):
+        m = re.search(r'&\s*"([^"]+)"\s*\)\s*$', f)
+        if not m:
+            return []
+        pt = (product_type or "").replace("-", "_").replace(" ", "")
+        if pt[:1].isdigit():
+            pt = "_" + pt
+        return _values_from_reference(wb, pt + m.group(1))
 
-    if "!" in formula:
-        try:
-            sheet_part, range_part = formula.split("!", 1)
-            sheet_name = sheet_part.strip("'")
-            if sheet_name in wb.sheetnames:
-                ref_ws = wb[sheet_name]
-                vals = []
-                for row in ref_ws[range_part]:
-                    for cell in (row if isinstance(row, tuple) else [row]):
-                        if cell.value is not None and str(cell.value).strip() != "":
-                            vals.append(str(cell.value).strip())
-                return list(dict.fromkeys(vals))
-        except Exception:
-            pass
-    return []
+    # 3) Named range / plain sheet range
+    return _values_from_reference(wb, f)
 
 
 def parse_marketplace_template(uploaded_file, platform="Amazon"):
@@ -253,9 +298,11 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
     if platform == "Myntra":
         ws = wb["Kurta Sets"] if "Kurta Sets" in wb.sheetnames else (wb["Kurtas"] if "Kurtas" in wb.sheetnames else wb.active)
         header_row = 3
+        product_type = ""
     else:
         ws = wb["Template"] if "Template" in wb.sheetnames else wb.active
         header_row = 4
+        product_type = "KURTA"
 
     schema = {}
     col_to_header = {}
@@ -271,19 +318,14 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
     if ws.data_validations and ws.data_validations.dataValidation:
         for dv in ws.data_validations.dataValidation:
             if dv.type == "list" and dv.formula1:
-                formula_str = str(dv.formula1).strip()
-                # Ignore dependent Excel formulas (INDIRECT etc.) so dropdowns are clean
-                if formula_str.startswith("="):
-                    continue
-                opts = resolve_excel_range(wb, formula_str)
+                opts = resolve_excel_range(wb, dv.formula1, product_type)
                 if opts:
-                    clean_opts = [o for o in opts if not str(o).startswith("=")]
                     for cell_range in dv.sqref.ranges:
                         for c_idx in range(cell_range.min_col, cell_range.max_col + 1):
                             if c_idx in col_to_header:
                                 h_name = col_to_header[c_idx]
-                                if not schema[h_name]["options"] and clean_opts:
-                                    schema[h_name]["options"] = clean_opts
+                                if not schema[h_name]["options"]:
+                                    schema[h_name]["options"] = opts
 
     for sname in wb.sheetnames:
         if any(w in sname.lower() for w in ["valid", "drop", "master", "value"]):
@@ -306,16 +348,15 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
                             if cval is not None and str(cval).strip() and str(cval).strip() != v_head_clean:
                                 opts.append(str(cval).strip())
                         if opts:
-                            clean_opts = [o for o in opts if not str(o).startswith("=")]
-                            if clean_opts:
-                                schema[matched_key]["options"] = list(dict.fromkeys(clean_opts))
+                            schema[matched_key]["options"] = list(dict.fromkeys(opts))
 
     uploaded_file.seek(0)
     return schema
 
 
 def snap_to_valid_option(target_val: str, options: list) -> str:
-    """Snaps any string value to the exact or closest matching option in `options`."""
+    """Snaps any string value to the exact or closest matching option in `options`.
+    Returns "" (blank) when nothing is a reasonable match — never a random first option."""
     if target_val is None or str(target_val).strip() == "":
         return ""
     target_str = str(target_val).strip()
@@ -330,15 +371,15 @@ def snap_to_valid_option(target_val: str, options: list) -> str:
         return lower_map[target_str.lower()]
 
     best = process.extractOne(target_str, options, scorer=fuzz.WRatio)
-    if best and best[1] >= 50:
+    if best and best[1] >= 60:
         return best[0]
-    return options[0] if options else ""
+    return ""
 
 
 def match_value_to_list(val: str, options: list, default_val: str = "") -> str:
     if not val or not options:
         return default_val
-    clean_opts = [o for o in options if o != "Other / Custom..." and not str(o).startswith("=")]
+    clean_opts = [o for o in options if o != "Other / Custom..."]
     snapped = snap_to_valid_option(val, clean_opts)
     return snapped if snapped else default_val
 
@@ -346,10 +387,10 @@ def match_value_to_list(val: str, options: list, default_val: str = "") -> str:
 # ==============================================================================
 # ONE-WAY REACTIVE CASCADE: CORE ATTRIBUTES -> AMAZON & MYNTRA TABS
 # ==============================================================================
-def compute_baseline_template_maps(core_dict, brand="PERVAS"):
+def compute_baseline_template_maps(core_dict):
     """
     Computes the full baseline dictionary for BOTH Amazon and Myntra templates
-    from the current Core Attributes dictionary and active brand.
+    from the current Core Attributes dictionary.
     """
     d_code = core_dict.get("design_code", "NewStyle")
     t_core = core_dict.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants")
@@ -373,7 +414,8 @@ def compute_baseline_template_maps(core_dict, brand="PERVAS"):
     pkg = core_dict.get("package_contains", "1 Kurta, 1 Pant")
     desc = core_dict.get("description", AMAZON_EXACT_DESCRIPTION)
 
-    brand_email = "pervas0007@gmail.com" if "PERVAS" in brand.upper() else "support@brand.com"
+    brand = "PERVAS"
+    brand_email = "pervas0007@gmail.com"
     title_full = f"{brand} Women's {raw_fab} {pat} {t_core} ({d_code})"
 
     amz_base = {
@@ -497,10 +539,9 @@ def set_template_widget_value(platform_prefix, field_name, raw_value, schema_dic
     w_key = f"{platform_prefix}_gran_{field_name}"
     meta = schema_dict.get(field_name, {})
     opts = meta.get("options", [])
-    clean_opts = [o for o in opts if not str(o).startswith("=")]
-    if clean_opts:
-        snapped = snap_to_valid_option(raw_value, clean_opts)
-        st.session_state[w_key] = snapped if snapped in clean_opts else ""
+    if opts:
+        snapped = snap_to_valid_option(raw_value, opts)
+        st.session_state[w_key] = snapped if snapped in opts else ""
     else:
         st.session_state[w_key] = "" if raw_value is None else str(raw_value)
 
@@ -703,11 +744,11 @@ def run_gemini_archive_analysis(api_key, model_name, raw_text, images, amz_schem
         compressed_imgs.append(im_copy)
 
     amz_fields_spec = {
-        k: ([o for o in v["options"] if not str(o).startswith("=")][:35] if v["options"] else "Free Text")
+        k: (v["options"][:60] if v["options"] else "Free Text")
         for k, v in amz_schema.items()
     }
     myn_fields_spec = {
-        k: ([o for o in v["options"] if not str(o).startswith("=")][:35] if v["options"] else "Free Text")
+        k: (v["options"][:60] if v["options"] else "Free Text")
         for k, v in myn_schema.items()
     }
 
@@ -1114,7 +1155,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
         )
 
     # --------------------------------------------------------------------------
-    # TAB 2: ALL AMAZON TEMPLATE FIELDS (CLEAN DROPDOWNS - NO INDIRECT FORMULAS)
+    # TAB 2: ALL AMAZON TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
     # --------------------------------------------------------------------------
     amz_override_inputs = {}
     with tab_amz_all:
@@ -1126,10 +1167,9 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             for idx, (fname, fmeta) in enumerate(amz_schema.items()):
                 col_ui = amz_grid[idx % 3]
                 w_key = f"amz_gran_{fname}"
-                raw_opts = fmeta.get("options", [])
-                clean_opts = [o for o in raw_opts if not str(o).startswith("=")]
-                if clean_opts:
-                    full_opts = [""] + clean_opts
+                opts = fmeta.get("options", [])
+                if opts:
+                    full_opts = [""] + opts
                     if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
                         st.session_state[w_key] = ""
                     amz_override_inputs[fname] = col_ui.selectbox(
@@ -1146,7 +1186,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                     )
 
     # --------------------------------------------------------------------------
-    # TAB 3: ALL MYNTRA TEMPLATE FIELDS (CLEAN DROPDOWNS - NO INDIRECT FORMULAS)
+    # TAB 3: ALL MYNTRA TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
     # --------------------------------------------------------------------------
     myn_override_inputs = {}
     with tab_myn_all:
@@ -1158,10 +1198,9 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             for idx, (fname, fmeta) in enumerate(myn_schema.items()):
                 col_ui = myn_grid[idx % 3]
                 w_key = f"myn_gran_{fname}"
-                raw_opts = fmeta.get("options", [])
-                clean_opts = [o for o in raw_opts if not str(o).startswith("=")]
-                if clean_opts:
-                    full_opts = [""] + clean_opts
+                opts = fmeta.get("options", [])
+                if opts:
+                    full_opts = [""] + opts
                     if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
                         st.session_state[w_key] = ""
                     myn_override_inputs[fname] = col_ui.selectbox(
@@ -1391,13 +1430,12 @@ else:
                     colorways = prod.get("color_variants", [{"color_name": "White", "color_map": "White", "images": []}])
                     amz_ovr = prod.get("amazon_overrides", {})
                     myn_ovr = prod.get("myntra_overrides", {})
+                    amz_base_defaults, myn_base_defaults = compute_baseline_template_maps(prod)
 
                     raw_fabric = prod.get("fabric", "Pure Cotton")
 
                     for brand in selected_brands:
-                        # Dynamically calculate baseline template maps based on the selected brand loop
-                        amz_base_defaults, myn_base_defaults = compute_baseline_template_maps(prod, brand=brand)
-                        brand_email = "pervas0007@gmail.com" if "PERVAS" in brand.upper() else "support@brand.com"
+                        brand_email = "pervas0007@gmail.com" if brand == "PERVAS" else "perabin32544@gmail.com"
 
                         # ------------------------------------------------------
                         # AMAZON PARENT ROW
