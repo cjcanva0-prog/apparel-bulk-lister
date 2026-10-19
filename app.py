@@ -221,6 +221,13 @@ DROPDOWNS = {
 }
 
 
+# Special choices available on every Amazon / Myntra template field
+BLANK_MARKER = "__BLANK__"            # stored in the DB when a field is forced empty
+BLANK_LABEL = "⛔ Leave blank"        # dropdown choice that forces an empty cell
+CUSTOM_LABEL = "✏️ Custom value..."   # dropdown choice that lets you type any value
+BLANK_TEXT = "[blank]"                # type this in a free-text field to force an empty cell
+
+
 # ==============================================================================
 # V2 ENGINE: DYNAMIC TEMPLATE INTROSPECTION & DROPDOWN EXTRACTOR
 # ==============================================================================
@@ -531,19 +538,74 @@ def compute_baseline_template_maps(core_dict):
     return amz_base, myn_base
 
 
-def set_template_widget_value(platform_prefix, field_name, raw_value, schema_dict):
+def set_template_widget_value(platform_prefix, field_name, raw_value, schema_dict, allow_custom=False):
     """
-    Sets the Streamlit session_state key for an Amazon or Myntra field,
-    automatically snapping to a valid dropdown option if that field has dropdown options.
+    Sets the Streamlit session_state key for an Amazon or Myntra field.
+    - Dropdown fields snap to the closest valid option (or blank if no good match).
+    - allow_custom=True (used for values saved by the user) keeps off-list values
+      by selecting the 'Custom value...' choice instead of snapping them.
+    - BLANK_MARKER selects 'Leave blank'.
     """
     w_key = f"{platform_prefix}_gran_{field_name}"
+    cust_key = w_key + "__custom"
     meta = schema_dict.get(field_name, {})
     opts = meta.get("options", [])
+
+    if raw_value == BLANK_MARKER:
+        st.session_state[w_key] = BLANK_LABEL if opts else BLANK_TEXT
+        return
+
     if opts:
-        snapped = snap_to_valid_option(raw_value, opts)
-        st.session_state[w_key] = snapped if snapped in opts else ""
+        if allow_custom and raw_value is not None and str(raw_value).strip() != "":
+            raw_str = str(raw_value).strip()
+            lower_map = {o.lower(): o for o in opts}
+            if raw_str.lower() in lower_map:
+                st.session_state[w_key] = lower_map[raw_str.lower()]
+            else:
+                st.session_state[w_key] = CUSTOM_LABEL
+                st.session_state[cust_key] = raw_str
+        else:
+            snapped = snap_to_valid_option(raw_value, opts)
+            st.session_state[w_key] = snapped if snapped in opts else ""
     else:
         st.session_state[w_key] = "" if raw_value is None else str(raw_value)
+
+
+def render_template_field(col_ui, platform_prefix, icon, fname, fmeta):
+    """
+    Renders one template field and returns the value to save:
+      ""            -> auto (use the app's default / AI value)
+      BLANK_MARKER  -> force the cell to stay empty
+      any text      -> dropdown value or a custom off-list value
+    """
+    w_key = f"{platform_prefix}_gran_{fname}"
+    cust_key = w_key + "__custom"
+    opts = fmeta.get("options", [])
+
+    if opts:
+        full_opts = ["", BLANK_LABEL] + opts + [CUSTOM_LABEL]
+        if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
+            st.session_state[w_key] = ""
+        choice = col_ui.selectbox(
+            f"{icon} {fname}",
+            options=full_opts,
+            key=w_key,
+            format_func=lambda x: "(auto)" if x == "" else x,
+        )
+        if choice == BLANK_LABEL:
+            return BLANK_MARKER
+        if choice == CUSTOM_LABEL:
+            if cust_key not in st.session_state:
+                st.session_state[cust_key] = ""
+            return col_ui.text_input(f"↳ custom value for {fname}", key=cust_key).strip()
+        return choice
+
+    if w_key not in st.session_state:
+        st.session_state[w_key] = ""
+    txt = col_ui.text_input(f"{icon} {fname}", key=w_key, help=f"Type {BLANK_TEXT} to force this cell to stay empty.")
+    if str(txt).strip().lower() == BLANK_TEXT:
+        return BLANK_MARKER
+    return txt
 
 
 def get_current_core_values():
@@ -574,13 +636,15 @@ def get_current_core_values():
     }
 
 
-def sync_all_core_to_templates(amz_schema, myn_schema, ai_amz_ovr=None, ai_myn_ovr=None):
+def sync_all_core_to_templates(amz_schema, myn_schema, ai_amz_ovr=None, ai_myn_ovr=None, trust_custom=False):
     """
     Pushes ALL Core Attributes + Baseline Rules + AI Overrides into the
     Amazon and Myntra template widget states.
     """
     core_now = get_current_core_values()
     amz_base, myn_base = compute_baseline_template_maps(core_now)
+    amz_ovr_keys = set(ai_amz_ovr.keys()) if (trust_custom and ai_amz_ovr) else set()
+    myn_ovr_keys = set(ai_myn_ovr.keys()) if (trust_custom and ai_myn_ovr) else set()
 
     if ai_amz_ovr:
         for k, v in ai_amz_ovr.items():
@@ -599,7 +663,7 @@ def sync_all_core_to_templates(amz_schema, myn_schema, ai_amz_ovr=None, ai_myn_o
             if m and m[1] >= 88:
                 val_to_set = amz_base[m[0]]
         if val_to_set is not None:
-            set_template_widget_value("amz", fname, val_to_set, amz_schema)
+            set_template_widget_value("amz", fname, val_to_set, amz_schema, allow_custom=(fname in amz_ovr_keys))
 
     for fname in myn_schema.keys():
         val_to_set = myn_base.get(fname, None)
@@ -608,7 +672,7 @@ def sync_all_core_to_templates(amz_schema, myn_schema, ai_amz_ovr=None, ai_myn_o
             if m and m[1] >= 88:
                 val_to_set = myn_base[m[0]]
         if val_to_set is not None:
-            set_template_widget_value("myn", fname, val_to_set, myn_schema)
+            set_template_widget_value("myn", fname, val_to_set, myn_schema, allow_custom=(fname in myn_ovr_keys))
 
 
 def on_core_field_change(core_field_name):
@@ -673,7 +737,7 @@ def on_core_field_change(core_field_name):
                     set_template_widget_value("myn", s_col, myn_base[target_myn_col], myn_schema)
 
 
-def load_record_into_session_state(record, amz_schema, myn_schema):
+def load_record_into_session_state(record, amz_schema, myn_schema, from_db=False):
     """Initializes all Tab 1, Tab 2, and Tab 3 widget keys in st.session_state."""
     st.session_state["core_design_code"] = record.get("design_code", "NewStyle")
     st.session_state["core_title_core"] = record.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants")
@@ -700,6 +764,7 @@ def load_record_into_session_state(record, amz_schema, myn_schema):
         myn_schema,
         ai_amz_ovr=record.get("amazon_overrides", {}),
         ai_myn_ovr=record.get("myntra_overrides", {}),
+        trust_custom=from_db,
     )
 
 
@@ -877,7 +942,7 @@ with st.sidebar:
                 if st.session_state.get("show_add_modal") or st.session_state.get("edit_product_key"):
                     ek = st.session_state.get("edit_product_key")
                     saved_amz = db.get(ek, {}).get("amazon_overrides", {}) if ek and ek in db else {}
-                    sync_all_core_to_templates(st.session_state["amz_schema"], st.session_state.get("myn_schema", {}), ai_amz_ovr=saved_amz)
+                    sync_all_core_to_templates(st.session_state["amz_schema"], st.session_state.get("myn_schema", {}), ai_amz_ovr=saved_amz, trust_custom=True)
         st.success(f"Amazon: {len(st.session_state.get('amz_schema', {}))} fields loaded")
 
     if tpl_myn_sidebar:
@@ -888,7 +953,7 @@ with st.sidebar:
                 if st.session_state.get("show_add_modal") or st.session_state.get("edit_product_key"):
                     ek = st.session_state.get("edit_product_key")
                     saved_myn = db.get(ek, {}).get("myntra_overrides", {}) if ek and ek in db else {}
-                    sync_all_core_to_templates(st.session_state.get("amz_schema", {}), st.session_state["myn_schema"], ai_myn_ovr=saved_myn)
+                    sync_all_core_to_templates(st.session_state.get("amz_schema", {}), st.session_state["myn_schema"], ai_myn_ovr=saved_myn, trust_custom=True)
         st.success(f"Myntra: {len(st.session_state.get('myn_schema', {}))} fields loaded")
 
 amz_schema = st.session_state.get("amz_schema", {})
@@ -942,7 +1007,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.session_state[f"cmap_{idx_c}"] = match_value_to_list(c_var["color_map"], DROPDOWNS["amazon_color_maps"], "White")
             st.session_state[f"cimg_{idx_c}"] = c_var["images"]
 
-        load_record_into_session_state(curr_rec, amz_schema, myn_schema)
+        load_record_into_session_state(curr_rec, amz_schema, myn_schema, from_db=True)
         st.session_state["loaded_edit_key"] = edit_key
 
     st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Design to Catalog (Live One-Way Core -> Template Sync)'}**")
@@ -1165,25 +1230,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.caption("Every column from your Amazon template is prefilled below from AI + Core Attributes. Editing Core Attributes updates these automatically, while edits you make here stay strictly in Amazon!")
             amz_grid = st.columns(3)
             for idx, (fname, fmeta) in enumerate(amz_schema.items()):
-                col_ui = amz_grid[idx % 3]
-                w_key = f"amz_gran_{fname}"
-                opts = fmeta.get("options", [])
-                if opts:
-                    full_opts = [""] + opts
-                    if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
-                        st.session_state[w_key] = ""
-                    amz_override_inputs[fname] = col_ui.selectbox(
-                        f"📦 {fname}",
-                        options=full_opts,
-                        key=w_key,
-                    )
-                else:
-                    if w_key not in st.session_state:
-                        st.session_state[w_key] = ""
-                    amz_override_inputs[fname] = col_ui.text_input(
-                        f"📦 {fname}",
-                        key=w_key,
-                    )
+                amz_override_inputs[fname] = render_template_field(amz_grid[idx % 3], "amz", "📦", fname, fmeta)
 
     # --------------------------------------------------------------------------
     # TAB 3: ALL MYNTRA TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
@@ -1196,25 +1243,7 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
             st.caption("Every column from your Myntra template is prefilled below from AI + Core Attributes. Editing Core Attributes updates these automatically, while edits you make here stay strictly in Myntra!")
             myn_grid = st.columns(3)
             for idx, (fname, fmeta) in enumerate(myn_schema.items()):
-                col_ui = myn_grid[idx % 3]
-                w_key = f"myn_gran_{fname}"
-                opts = fmeta.get("options", [])
-                if opts:
-                    full_opts = [""] + opts
-                    if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
-                        st.session_state[w_key] = ""
-                    myn_override_inputs[fname] = col_ui.selectbox(
-                        f"👗 {fname}",
-                        options=full_opts,
-                        key=w_key,
-                    )
-                else:
-                    if w_key not in st.session_state:
-                        st.session_state[w_key] = ""
-                    myn_override_inputs[fname] = col_ui.text_input(
-                        f"👗 {fname}",
-                        key=w_key,
-                    )
+                myn_override_inputs[fname] = render_template_field(myn_grid[idx % 3], "myn", "👗", fname, fmeta)
 
     st.markdown("---")
     save_c1, save_c2 = st.columns([1, 4])
@@ -1428,8 +1457,9 @@ else:
                 for d_name in selected_designs:
                     prod = db[d_name]
                     colorways = prod.get("color_variants", [{"color_name": "White", "color_map": "White", "images": []}])
-                    amz_ovr = prod.get("amazon_overrides", {})
-                    myn_ovr = prod.get("myntra_overrides", {})
+                    # BLANK_MARKER -> "" so it overrides the default but write_cell leaves the cell empty
+                    amz_ovr = {k: ("" if v == BLANK_MARKER else v) for k, v in prod.get("amazon_overrides", {}).items()}
+                    myn_ovr = {k: ("" if v == BLANK_MARKER else v) for k, v in prod.get("myntra_overrides", {}).items()}
                     amz_base_defaults, myn_base_defaults = compute_baseline_template_maps(prod)
 
                     raw_fabric = prod.get("fabric", "Pure Cotton")
