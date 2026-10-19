@@ -3,7 +3,6 @@ import datetime
 import io
 import json
 import os
-import re
 import zipfile
 import rarfile
 import openpyxl
@@ -217,23 +216,19 @@ DROPDOWNS = {
 # V2 ENGINE: DYNAMIC TEMPLATE INTROSPECTION & DROPDOWN EXTRACTOR
 # ==============================================================================
 def resolve_excel_range(wb, formula_str):
-    """Resolves Excel Data Validation range formulas (like =ValidValues!$B$2:$B$50 or Named Ranges)."""
     if not formula_str:
         return []
     formula = str(formula_str).strip()
     if formula.startswith("="):
         formula = formula[1:]
 
-    # Direct comma-separated string list
     if "," in formula and "!" not in formula and ":" not in formula:
         return [o.strip().strip('"') for o in formula.split(",") if o.strip()]
 
-    # Check if it's a Named Range in workbook
     if formula in wb.defined_names:
         defn = wb.defined_names[formula]
         formula = defn.attr_text
 
-    # Parse Sheet!Range (e.g. 'Valid Values'!$A$2:$A$40)
     if "!" in formula:
         try:
             sheet_part, range_part = formula.split("!", 1)
@@ -252,9 +247,6 @@ def resolve_excel_range(wb, formula_str):
 
 
 def parse_marketplace_template(uploaded_file, platform="Amazon"):
-    """
-    Extracts ALL column headers and their dropdown options from an Amazon or Myntra Excel template.
-    """
     uploaded_file.seek(0)
     wb = openpyxl.load_workbook(uploaded_file, data_only=True)
 
@@ -272,12 +264,10 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
         val = ws.cell(row=header_row, column=col).value
         if val:
             h_name = str(val).strip()
-            # Handle duplicate column names (like Bullet Point or Other Image URL)
             if h_name not in schema:
                 schema[h_name] = {"col_idx": col, "options": []}
                 col_to_header[col] = h_name
 
-    # 1. Extract from worksheet Data Validations
     if ws.data_validations and ws.data_validations.dataValidation:
         for dv in ws.data_validations.dataValidation:
             if dv.type == "list" and dv.formula1:
@@ -290,7 +280,6 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
                                 if not schema[h_name]["options"]:
                                     schema[h_name]["options"] = opts
 
-    # 2. Check Valid Values / Drop Down sheets by matching header names
     for sname in wb.sheetnames:
         if any(w in sname.lower() for w in ["valid", "drop", "master", "value"]):
             v_ws = wb[sname]
@@ -298,7 +287,6 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
                 v_head = v_ws.cell(row=1, column=col).value or v_ws.cell(row=2, column=col).value
                 if v_head:
                     v_head_clean = str(v_head).strip()
-                    # Match exact or close header
                     matched_key = None
                     if v_head_clean in schema:
                         matched_key = v_head_clean
@@ -319,37 +307,352 @@ def parse_marketplace_template(uploaded_file, platform="Amazon"):
     return schema
 
 
-def get_best_dropdown_index(target_val: str, options: list) -> int:
-    """
-    Finds the exact match OR next-best fuzzy match index in `["", *options]`.
-    """
-    if not target_val or not options:
-        return 0
+def snap_to_valid_option(target_val: str, options: list) -> str:
+    """Snaps any string value to the exact or closest matching option in `options`."""
+    if target_val is None or str(target_val).strip() == "":
+        return ""
     target_str = str(target_val).strip()
-    full_opts = [""] + options
+    if not options:
+        return target_str
 
     if target_str in options:
-        return full_opts.index(target_str)
+        return target_str
 
     lower_map = {o.lower(): o for o in options}
     if target_str.lower() in lower_map:
-        return full_opts.index(lower_map[target_str.lower()])
+        return lower_map[target_str.lower()]
 
     best = process.extractOne(target_str, options, scorer=fuzz.WRatio)
-    if best and best[1] >= 52:
-        return full_opts.index(best[0])
-    return 0
+    if best and best[1] >= 50:
+        return best[0]
+    return options[0] if options else ""
 
 
 def match_value_to_list(val: str, options: list, default_val: str = "") -> str:
-    """Returns the closest matching value from options list."""
     if not val or not options:
         return default_val
     clean_opts = [o for o in options if o != "Other / Custom..."]
-    idx = get_best_dropdown_index(val, clean_opts)
-    if idx > 0:
-        return clean_opts[idx - 1]
-    return default_val if default_val in options else (clean_opts[0] if clean_opts else "")
+    snapped = snap_to_valid_option(val, clean_opts)
+    return snapped if snapped else default_val
+
+
+# ==============================================================================
+# ONE-WAY REACTIVE CASCADE: CORE ATTRIBUTES -> AMAZON & MYNTRA TABS
+# ==============================================================================
+def compute_baseline_template_maps(core_dict):
+    """
+    Computes the full baseline dictionary for BOTH Amazon and Myntra templates
+    from the current Core Attributes dictionary.
+    """
+    d_code = core_dict.get("design_code", "NewStyle")
+    t_core = core_dict.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants")
+    raw_fab = core_dict.get("fabric", "Pure Cotton")
+    amz_fab = FABRIC_MAPPER.get(raw_fab, raw_fab)
+    pat = core_dict.get("top_pattern", "Embroidered")
+    prt = core_dict.get("print_type", "Floral")
+    nck = core_dict.get("neck", "V-Neck")
+    slv = core_dict.get("sleeve_length", "Three-Quarter Sleeves")
+    amz_slv = "3/4 Sleeve" if "Three" in str(slv) else str(slv)
+    shp = core_dict.get("shape", "Straight")
+    user_top_len = core_dict.get("top_length", "Calf Length")
+    len_tuple = LENGTH_MAPPER.get(user_top_len, (user_top_len, user_top_len))
+    myn_len, amz_len = len_tuple[0], len_tuple[1]
+    wev = core_dict.get("weave", "Machine Weave")
+    wsh = core_dict.get("wash_care", "Dry Clean")
+    occ = core_dict.get("occasion", "Festive")
+    mrp = str(core_dict.get("mrp", 3999))
+    sp = str(core_dict.get("selling_price", 1499))
+    hsn = str(core_dict.get("hsn", "62114210"))
+    pkg = core_dict.get("package_contains", "1 Kurta, 1 Pant")
+    desc = core_dict.get("description", AMAZON_EXACT_DESCRIPTION)
+
+    brand = "PERVAS"
+    brand_email = "pervas0007@gmail.com"
+    title_full = f"{brand} Women's {raw_fab} {pat} {t_core} ({d_code})"
+
+    amz_base = {
+        "Status": "Active",
+        "Title": title_full,
+        "SKU": f"{brand}-{d_code}-Parent",
+        "Product Type": "KURTA",
+        "Listing Action": "Create or Replace (Full Update)",
+        "Parentage Level": "Child",
+        "Parent SKU": f"{brand}-{d_code}-Parent",
+        "Variation Theme Name": "SIZE/COLOR",
+        "Item Name": title_full,
+        "Brand Name": brand,
+        "Product Id Type": "GTIN Exempt",
+        "Model Name": str(d_code),
+        "Part Number": str(d_code),
+        "Manufacturer": brand_email,
+        "Manufacturer Contact Information": brand_email,
+        "Packer Contact Information": brand_email,
+        "Product Description": desc,
+        "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
+        "Lifestyle": "Casual" if occ in ["Casual", "Daily", "Work"] else "Ethnic",
+        "Style": shp,
+        "Fit Type": "Regular",
+        "Department Name": "Womens",
+        "Target Gender": "Female",
+        "Age Range Description": "Adult",
+        "Apparel Size System": "IN",
+        "Apparel Size Class": "Alpha",
+        "Shirt Size System": "IN",
+        "Shirt Size Class": "Alpha",
+        "Shirt Body Type": "Regular",
+        "Special Size": "Standard",
+        "Fabric Type": amz_fab,
+        "Material": amz_fab,
+        "Pattern": prt,
+        "Design Name": pat,
+        "Item Type Name": "KURTA",
+        "Item Length Description": amz_len,
+        "Occasion": occ,
+        "Care Instructions": wsh,
+        "Collar Style": nck,
+        "Neck Style": nck,
+        "Sleeve Length Description": amz_slv,
+        "Weave Method": "Powerloom" if wev == "Machine Weave" else wev,
+        "External Product Information Entity": "HSN Code",
+        "External Product Information": hsn,
+        "Standard Price": sp,
+        "Maximum Retail Price": mrp,
+        "Your Price INR (Sell on Amazon, IN)": sp,
+        "Maximum Retail Price (Sell on Amazon, IN)": mrp,
+        "Item Weight": "450.0",
+        "Item Weight Unit": "Grams",
+        "Country of Origin": "India",
+        "Skip Offer": "No",
+        "Item Condition": "New",
+        "Offer Condition Note": "New",
+        "Fulfillment Channel Code (IN)": "AMAZON_IN",
+        "Number of Items": "1",
+        "Item Length Longer Edge": "46.0",
+        "Item Length Unit": "Centimeters",
+        "Package Length": "25.0",
+        "Package Length Unit": "Centimeters",
+        "Package Width": "22.0",
+        "Package Width Unit": "Centimeters",
+        "Package Height": "3.0",
+        "Package Height Unit": "Centimeters",
+        "Package Weight": "450.0",
+        "Package Weight Unit": "Grams",
+    }
+
+    myn_base = {
+        "brand": brand,
+        "vendorArticleName": f"{brand} {t_core}",
+        "productDisplayName": f"{brand} {t_core}",
+        "Manufacturer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
+        "Packer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
+        "Country Of Origin": "India",
+        "articleType": "Kurta Sets" if "Pant" in pkg or "Sharara" in pkg or "Palazzo" in pkg or "Salwar" in pkg else "Kurtas",
+        "is Standard Size present on Label": "Yes",
+        "HSN": hsn,
+        "MRP": mrp,
+        "ISP": sp,
+        "AgeGroup": "Adults-Women",
+        "FashionType": "Fashion",
+        "Usage": "Ethnic" if occ in ["Festive", "Wedding", "Party"] else "Casual",
+        "Year": str(datetime.datetime.now().year),
+        "Product Details": desc,
+        "materialCareDescription": wsh,
+        "Top Fabric": raw_fab,
+        "Top Pattern": pat,
+        "Neck": nck,
+        "Sleeve Length": slv,
+        "Top Shape": shp,
+        "Top Length": myn_len,
+        "Bottom Fabric": raw_fab,
+        "Bottom Pattern": pat,
+        "Bottom Closure": "Elasticated",
+        "Waistband": "Elasticated",
+        "Print or Pattern Type": prt,
+        "Occasion": occ,
+        "Weave Pattern": "Regular",
+        "Weave Type": wev,
+        "Wash Care": wsh,
+        "Stitch": "Ready to Wear",
+        "Add-Ons": "NA",
+        "Number of Pockets": "NA",
+        "Number of Items": "1",
+        "Net Quantity Unit": "Piece",
+        "Package Contains": pkg,
+        "Net Quantity": "1",
+    }
+    return amz_base, myn_base
+
+
+def set_template_widget_value(platform_prefix, field_name, raw_value, schema_dict):
+    """
+    Sets the Streamlit session_state key for an Amazon or Myntra field,
+    automatically snapping to a valid dropdown option if that field has dropdown options.
+    """
+    w_key = f"{platform_prefix}_gran_{field_name}"
+    meta = schema_dict.get(field_name, {})
+    opts = meta.get("options", [])
+    if opts:
+        snapped = snap_to_valid_option(raw_value, opts)
+        st.session_state[w_key] = snapped if snapped in opts else ""
+    else:
+        st.session_state[w_key] = "" if raw_value is None else str(raw_value)
+
+
+def get_current_core_values():
+    """Reads the current live values of Tab 1 (Core Attributes) from st.session_state."""
+    def resolve_custom(sel_key, cust_key, default_v):
+        sel = st.session_state.get(sel_key, default_v)
+        return st.session_state.get(cust_key, default_v) if sel == "Other / Custom..." else sel
+
+    return {
+        "design_code": st.session_state.get("core_design_code", "NewStyle"),
+        "title_core": st.session_state.get("core_title_core", "Floral Cotton Embroidered Kurta Set with Pants"),
+        "fabric": resolve_custom("core_fabric_sel", "core_fabric_cust", "Pure Cotton"),
+        "top_pattern": resolve_custom("core_pattern_sel", "core_pattern_cust", "Embroidered"),
+        "print_type": resolve_custom("core_print_sel", "core_print_cust", "Floral"),
+        "neck": resolve_custom("core_neck_sel", "core_neck_cust", "V-Neck"),
+        "sleeve_length": resolve_custom("core_sleeve_sel", "core_sleeve_cust", "Three-Quarter Sleeves"),
+        "shape": resolve_custom("core_shape_sel", "core_shape_cust", "Straight"),
+        "top_length": resolve_custom("core_length_sel", "core_length_cust", "Calf Length"),
+        "weave": resolve_custom("core_weave_sel", "core_weave_cust", "Machine Weave"),
+        "wash_care": resolve_custom("core_wash_sel", "core_wash_cust", "Dry Clean"),
+        "occasion": resolve_custom("core_occ_sel", "core_occ_cust", "Festive"),
+        "mrp": st.session_state.get("core_mrp", 3999),
+        "selling_price": st.session_state.get("core_sp", 1499),
+        "hsn": st.session_state.get("core_hsn", "62114210"),
+        "package_contains": resolve_custom("core_pkg_sel", "core_pkg_cust", "1 Kurta, 1 Pant"),
+        "sizes": st.session_state.get("core_sizes", ["M", "L", "XL", "2XL", "3XL"]),
+        "description": st.session_state.get("core_desc", AMAZON_EXACT_DESCRIPTION),
+    }
+
+
+def sync_all_core_to_templates(amz_schema, myn_schema, ai_amz_ovr=None, ai_myn_ovr=None):
+    """
+    Pushes ALL Core Attributes + Baseline Rules + AI Overrides into the
+    Amazon and Myntra template widget states.
+    """
+    core_now = get_current_core_values()
+    amz_base, myn_base = compute_baseline_template_maps(core_now)
+
+    if ai_amz_ovr:
+        for k, v in ai_amz_ovr.items():
+            if v is not None and str(v).strip() != "":
+                amz_base[k] = v
+
+    if ai_myn_ovr:
+        for k, v in ai_myn_ovr.items():
+            if v is not None and str(v).strip() != "":
+                myn_base[k] = v
+
+    for fname in amz_schema.keys():
+        val_to_set = amz_base.get(fname, None)
+        if val_to_set is None:
+            m = process.extractOne(fname, list(amz_base.keys()), scorer=fuzz.token_sort_ratio)
+            if m and m[1] >= 88:
+                val_to_set = amz_base[m[0]]
+        if val_to_set is not None:
+            set_template_widget_value("amz", fname, val_to_set, amz_schema)
+
+    for fname in myn_schema.keys():
+        val_to_set = myn_base.get(fname, None)
+        if val_to_set is None:
+            m = process.extractOne(fname, list(myn_base.keys()), scorer=fuzz.token_sort_ratio)
+            if m and m[1] >= 88:
+                val_to_set = myn_base[m[0]]
+        if val_to_set is not None:
+            set_template_widget_value("myn", fname, val_to_set, myn_schema)
+
+
+def on_core_field_change(core_field_name):
+    """
+    One-Way Reactive Callback: Triggered whenever the user edits ANY single field in Tab 1 (Core Attributes).
+    Immediately updates the dependent Amazon and Myntra fields in Tabs 2 & 3,
+    without touching unrelated manual edits in Tabs 2 & 3!
+    """
+    amz_schema = st.session_state.get("amz_schema", {})
+    myn_schema = st.session_state.get("myn_schema", {})
+    core_now = get_current_core_values()
+    amz_base, myn_base = compute_baseline_template_maps(core_now)
+
+    CORE_TO_AMZ_MAP = {
+        "design_code": ["SKU", "Parent SKU", "Model Name", "Part Number", "Title", "Item Name"],
+        "title_core": ["Title", "Item Name"],
+        "fabric": ["Fabric Type", "Material", "Title", "Item Name"],
+        "top_pattern": ["Design Name", "Title", "Item Name"],
+        "print_type": ["Pattern"],
+        "neck": ["Neck Style", "Collar Style"],
+        "sleeve_length": ["Sleeve Length Description"],
+        "shape": ["Style"],
+        "top_length": ["Item Length Description"],
+        "weave": ["Weave Method"],
+        "wash_care": ["Care Instructions"],
+        "occasion": ["Occasion", "Lifestyle"],
+        "mrp": ["Maximum Retail Price", "Maximum Retail Price (Sell on Amazon, IN)"],
+        "selling_price": ["Standard Price", "Your Price INR (Sell on Amazon, IN)"],
+        "hsn": ["External Product Information"],
+        "description": ["Product Description"],
+    }
+
+    CORE_TO_MYN_MAP = {
+        "title_core": ["vendorArticleName", "productDisplayName"],
+        "fabric": ["Top Fabric", "Bottom Fabric"],
+        "top_pattern": ["Top Pattern", "Bottom Pattern"],
+        "print_type": ["Print or Pattern Type"],
+        "neck": ["Neck"],
+        "sleeve_length": ["Sleeve Length"],
+        "shape": ["Top Shape"],
+        "top_length": ["Top Length"],
+        "weave": ["Weave Type"],
+        "wash_care": ["Wash Care", "materialCareDescription"],
+        "occasion": ["Occasion", "Usage"],
+        "mrp": ["MRP"],
+        "selling_price": ["ISP"],
+        "hsn": ["HSN"],
+        "package_contains": ["Package Contains", "articleType"],
+        "description": ["Product Details"],
+    }
+
+    for target_amz_col in CORE_TO_AMZ_MAP.get(core_field_name, []):
+        if target_amz_col in amz_base:
+            for s_col in amz_schema.keys():
+                if s_col == target_amz_col or fuzz.token_sort_ratio(s_col, target_amz_col) >= 90:
+                    set_template_widget_value("amz", s_col, amz_base[target_amz_col], amz_schema)
+
+    for target_myn_col in CORE_TO_MYN_MAP.get(core_field_name, []):
+        if target_myn_col in myn_base:
+            for s_col in myn_schema.keys():
+                if s_col == target_myn_col or fuzz.token_sort_ratio(s_col, target_myn_col) >= 90:
+                    set_template_widget_value("myn", s_col, myn_base[target_myn_col], myn_schema)
+
+
+def load_record_into_session_state(record, amz_schema, myn_schema):
+    """Initializes all Tab 1, Tab 2, and Tab 3 widget keys in st.session_state."""
+    st.session_state["core_design_code"] = record.get("design_code", "NewStyle")
+    st.session_state["core_title_core"] = record.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants")
+    st.session_state["core_fabric_sel"] = match_value_to_list(record.get("fabric", "Pure Cotton"), DROPDOWNS["fabrics"], "Pure Cotton")
+    st.session_state["core_pattern_sel"] = match_value_to_list(record.get("top_pattern", "Embroidered"), DROPDOWNS["top_patterns"], "Embroidered")
+    st.session_state["core_print_sel"] = match_value_to_list(record.get("print_type", "Floral"), DROPDOWNS["print_types"], "Floral")
+    st.session_state["core_neck_sel"] = match_value_to_list(record.get("neck", "V-Neck"), DROPDOWNS["neck_styles"], "V-Neck")
+    st.session_state["core_sleeve_sel"] = match_value_to_list(record.get("sleeve_length", "Three-Quarter Sleeves"), DROPDOWNS["sleeve_lengths"], "Three-Quarter Sleeves")
+    st.session_state["core_shape_sel"] = match_value_to_list(record.get("shape", "Straight"), DROPDOWNS["shapes"], "Straight")
+    st.session_state["core_length_sel"] = match_value_to_list(record.get("top_length", "Calf Length"), DROPDOWNS["top_lengths"], "Calf Length")
+    st.session_state["core_weave_sel"] = match_value_to_list(record.get("weave", "Machine Weave"), DROPDOWNS["weave_types"], "Machine Weave")
+    st.session_state["core_wash_sel"] = match_value_to_list(record.get("wash_care", "Dry Clean"), DROPDOWNS["wash_cares"], "Dry Clean")
+    st.session_state["core_occ_sel"] = match_value_to_list(record.get("occasion", "Festive"), DROPDOWNS["occasions"], "Festive")
+    st.session_state["core_mrp"] = int(record.get("mrp", 3999))
+    st.session_state["core_sp"] = int(record.get("selling_price", 1499))
+    st.session_state["core_hsn"] = str(record.get("hsn", "62114210"))
+    st.session_state["core_pkg_sel"] = match_value_to_list(record.get("package_contains", "1 Kurta, 1 Pant"), DROPDOWNS["packages"], "1 Kurta, 1 Pant")
+    valid_sz = ["XS", "S", "M", "L", "XL", "2XL", "3XL"]
+    st.session_state["core_sizes"] = [s for s in record.get("sizes", ["M", "L", "XL", "2XL", "3XL"]) if s in valid_sz] or ["M", "L", "XL", "2XL"]
+    st.session_state["core_desc"] = record.get("description", AMAZON_EXACT_DESCRIPTION)
+
+    sync_all_core_to_templates(
+        amz_schema,
+        myn_schema,
+        ai_amz_ovr=record.get("amazon_overrides", {}),
+        ai_myn_ovr=record.get("myntra_overrides", {}),
+    )
 
 
 # ==============================================================================
@@ -386,7 +689,6 @@ def extract_archive(uploaded_archive):
 def run_gemini_archive_analysis(api_key, model_name, raw_text, images, amz_schema, myn_schema, archive_name=""):
     client = genai.Client(api_key=api_key)
 
-    # Compress up to 6 images in memory to stay well inside Free Tier token limits
     compressed_imgs = []
     for _, img in images[:6]:
         im_copy = img.copy()
@@ -394,11 +696,11 @@ def run_gemini_archive_analysis(api_key, model_name, raw_text, images, amz_schem
         compressed_imgs.append(im_copy)
 
     amz_fields_spec = {
-        k: (v["options"][:45] if v["options"] else "Free Text")
+        k: (v["options"][:35] if v["options"] else "Free Text")
         for k, v in amz_schema.items()
     }
     myn_fields_spec = {
-        k: (v["options"][:45] if v["options"] else "Free Text")
+        k: (v["options"][:35] if v["options"] else "Free Text")
         for k, v in myn_schema.items()
     }
 
@@ -430,18 +732,18 @@ def run_gemini_archive_analysis(api_key, model_name, raw_text, images, amz_schem
     MYNTRA TEMPLATE FIELDS & ALLOWED DROPDOWNS:
     {json.dumps(myn_fields_spec) if myn_fields_spec else "No custom Myntra template loaded yet."}
 
-    INSTRUCTIONS:
-    1. Extract 'design_code' from SKU/Design name in text or archive filename.
-    2. Identify ALL distinct color variants shown across the uploaded images (e.g., if 5 photos show 5 different colors of the same kurta set, list all 5 in 'detected_colors' with their closest 'color_name' and 'color_map').
-    3. Parse size range (e.g., 'M to XXXL' -> ["M", "L", "XL", "2XL", "3XL"]).
-    4. NEXT-BEST VALUE RULE: For every dropdown field (in base_fields, amazon_overrides, and myntra_overrides), if the exact value is not in the allowed options list, you MUST select the NEXT BEST, most semantically relevant value from that dropdown list. Never leave a field blank if a reasonable equivalent exists.
-    5. Write a rich, compelling 'description' highlighting the fabric feel, visual embroidery/print charm, silhouette, and styling.
+    CRITICAL INSTRUCTIONS:
+    1. Extract 'design_code' from SKU/Design name in text or archive filename (capitalize nicely, e.g., 'Bansari').
+    2. Identify ALL distinct color variants shown across the uploaded images (e.g., if 5 photos show 5 different colors, list all 5 in 'detected_colors').
+    3. Parse size range (e.g., 'M to XXXL' -> ["M", "L", "XL", "2XL", "3XL"]). Note: If 'Price' in notes is wholesale/cost price (like 350), set 'selling_price' to a realistic retail price or that number, and 'mrp' to 3999.
+    4. PREFILL ALL RELEVANT AMAZON & MYNTRA TEMPLATE FIELDS: In 'amazon_overrides' and 'myntra_overrides', populate every relevant attribute from the template schemas above (including Collar Style, Sleeve Type, Fit Type, Closure Type, Bottom Style, Ornamentation, Weave Type, Occasion, Care Instructions, Lifestyle, Item Highlight, Bullet Points, etc.).
+    5. NEXT-BEST VALUE RULE: Whenever a field has allowed dropdown options, you MUST pick the exact match or the NEXT BEST, most semantically relevant option from its allowed options list.
 
-    Return ONLY valid JSON matching this exact structure:
+    Return ONLY valid JSON matching this structure:
     {{
       "base_fields": {{
         "design_code": "string",
-        "title_core": "string (e.g. Floral Cotton Embroidered Kurta Set with Pants)",
+        "title_core": "string",
         "fabric": "string",
         "top_pattern": "string",
         "print_type": "string",
@@ -463,10 +765,10 @@ def run_gemini_archive_analysis(api_key, model_name, raw_text, images, amz_schem
         {{"color_name": "Navy Blue", "color_map": "Blue"}}
       ],
       "amazon_overrides": {{
-        "Field Name": "Prefilled Value"
+        "Exact Amazon Column Name": "Prefilled Value"
       }},
       "myntra_overrides": {{
-        "Field Name": "Prefilled Value"
+        "Exact Myntra Column Name": "Prefilled Value"
       }}
     }}
     """
@@ -511,10 +813,10 @@ with st.sidebar:
         gemini_model = st.text_input("Enter Custom Model ID", value="gemini-3.8-flash")
     else:
         gemini_model = model_choice
-        
+
     st.markdown("---")
     st.subheader("📑 Load Master Templates")
-    st.caption("Upload your Amazon & Myntra templates here so the Add/Edit form can display every field and dropdown from both platforms.")
+    st.caption("Upload your Amazon & Myntra templates here so the Add/Edit form can display and prefill every field and dropdown from both platforms.")
 
     tpl_amz_sidebar = st.file_uploader("Amazon Master Template (.xlsm/.xlsx)", type=["xlsm", "xlsx"], key="sb_amz_tpl")
     tpl_myn_sidebar = st.file_uploader("Myntra Master Template (.xlsx)", type=["xlsx"], key="sb_myn_tpl")
@@ -524,6 +826,10 @@ with st.sidebar:
             with st.spinner("Extracting Amazon columns & dropdowns..."):
                 st.session_state["amz_schema"] = parse_marketplace_template(tpl_amz_sidebar, "Amazon")
                 st.session_state["loaded_amz_tpl_name"] = tpl_amz_sidebar.name
+                if st.session_state.get("show_add_modal") or st.session_state.get("edit_product_key"):
+                    ek = st.session_state.get("edit_product_key")
+                    saved_amz = db.get(ek, {}).get("amazon_overrides", {}) if ek and ek in db else {}
+                    sync_all_core_to_templates(st.session_state["amz_schema"], st.session_state.get("myn_schema", {}), ai_amz_ovr=saved_amz)
         st.success(f"Amazon: {len(st.session_state.get('amz_schema', {}))} fields loaded")
 
     if tpl_myn_sidebar:
@@ -531,6 +837,10 @@ with st.sidebar:
             with st.spinner("Extracting Myntra columns & dropdowns..."):
                 st.session_state["myn_schema"] = parse_marketplace_template(tpl_myn_sidebar, "Myntra")
                 st.session_state["loaded_myn_tpl_name"] = tpl_myn_sidebar.name
+                if st.session_state.get("show_add_modal") or st.session_state.get("edit_product_key"):
+                    ek = st.session_state.get("edit_product_key")
+                    saved_myn = db.get(ek, {}).get("myntra_overrides", {}) if ek and ek in db else {}
+                    sync_all_core_to_templates(st.session_state.get("amz_schema", {}), st.session_state["myn_schema"], ai_myn_ovr=saved_myn)
         st.success(f"Myntra: {len(st.session_state.get('myn_schema', {}))} fields loaded")
 
 amz_schema = st.session_state.get("amz_schema", {})
@@ -546,10 +856,11 @@ with col_t1:
     st.subheader("📦 Master Catalog")
 with col_t2:
     if st.button("➕ Add New Product (AI / Manual)", use_container_width=True, type="primary"):
-        st.session_state["show_add_modal"] = not st.session_state.get("show_add_modal", False)
+        st.session_state["show_add_modal"] = True
         st.session_state["edit_product_key"] = None
-        st.session_state["ai_draft"] = {}
         st.session_state["temp_colors"] = [{"color_name": "White", "color_map": "White", "images": ""}]
+        load_record_into_session_state({}, amz_schema, myn_schema)
+        st.rerun()
 with col_t3:
     if st.button("🗑️ Delete Selected", use_container_width=True):
         st.session_state["trigger_delete"] = True
@@ -563,17 +874,30 @@ with col_t4:
         use_container_width=True,
     )
 
-# Add / Edit Form Drawer
+# Add / Edit Drawer (Reactive — No st.form freeze!)
 if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_product_key", None):
     edit_key = st.session_state.get("edit_product_key", None)
     is_edit = edit_key is not None and edit_key in db
 
-    # Merge existing DB record with any AI prefill draft
-    base_record = db[edit_key] if is_edit else {}
-    ai_draft = st.session_state.get("ai_draft", {})
-    curr_data = {**base_record, **ai_draft}
+    if is_edit and st.session_state.get("loaded_edit_key") != edit_key:
+        curr_rec = db[edit_key]
+        st.session_state["temp_colors"] = [
+            {
+                "color_name": c.get("color_name", "White"),
+                "color_map": c.get("color_map", "White"),
+                "images": "\n".join(c.get("images", [])),
+            }
+            for c in curr_rec.get("color_variants", [])
+        ]
+        for idx_c, c_var in enumerate(st.session_state["temp_colors"]):
+            st.session_state[f"cname_{idx_c}"] = match_value_to_list(c_var["color_name"], DROPDOWNS["colors"], "White")
+            st.session_state[f"cmap_{idx_c}"] = match_value_to_list(c_var["color_map"], DROPDOWNS["amazon_color_maps"], "White")
+            st.session_state[f"cimg_{idx_c}"] = c_var["images"]
 
-    st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Design to Catalog (AI Zip/Rar Prefill Enabled)'}**")
+        load_record_into_session_state(curr_rec, amz_schema, myn_schema)
+        st.session_state["loaded_edit_key"] = edit_key
+
+    st.info(f"✏️ **{'Editing Style: ' + edit_key if is_edit else 'Add New Design to Catalog (Live One-Way Core -> Template Sync)'}**")
 
     # --------------------------------------------------------------------------
     # AI ARCHIVE DROPZONE (.ZIP / .RAR)
@@ -614,35 +938,25 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                         )
 
                         bf = ai_res.get("base_fields", {})
-                        # Snap AI base fields to closest valid dropdown values
-                        bf["fabric"] = match_value_to_list(bf.get("fabric"), DROPDOWNS["fabrics"], "Pure Cotton")
-                        bf["top_pattern"] = match_value_to_list(bf.get("top_pattern"), DROPDOWNS["top_patterns"], "Embroidered")
-                        bf["print_type"] = match_value_to_list(bf.get("print_type"), DROPDOWNS["print_types"], "Floral")
-                        bf["neck"] = match_value_to_list(bf.get("neck"), DROPDOWNS["neck_styles"], "Round Neck")
-                        bf["sleeve_length"] = match_value_to_list(bf.get("sleeve_lengths") or bf.get("sleeve_length"), DROPDOWNS["sleeve_lengths"], "Three-Quarter Sleeves")
-                        bf["shape"] = match_value_to_list(bf.get("shape"), DROPDOWNS["shapes"], "Straight")
-                        bf["top_length"] = match_value_to_list(bf.get("top_length"), DROPDOWNS["top_lengths"], "Calf Length")
-                        bf["weave"] = match_value_to_list(bf.get("weave"), DROPDOWNS["weave_types"], "Machine Weave")
-                        bf["wash_care"] = match_value_to_list(bf.get("wash_care"), DROPDOWNS["wash_cares"], "Dry Clean")
-                        bf["occasion"] = match_value_to_list(bf.get("occasion"), DROPDOWNS["occasions"], "Festive")
-                        bf["package_contains"] = match_value_to_list(bf.get("package_contains"), DROPDOWNS["packages"], "1 Kurta, 1 Pant")
-
                         bf["amazon_overrides"] = ai_res.get("amazon_overrides", {})
                         bf["myntra_overrides"] = ai_res.get("myntra_overrides", {})
 
-                        st.session_state["ai_draft"] = bf
+                        # Load directly into widget session_state keys (Core + All Amazon + All Myntra!)
+                        load_record_into_session_state(bf, amz_schema, myn_schema)
 
-                        # Populate detected color variants
                         det_colors = ai_res.get("detected_colors", [])
                         if det_colors:
                             new_temp_colors = []
-                            for dc in det_colors:
+                            for idx_c, dc in enumerate(det_colors):
                                 cname = match_value_to_list(dc.get("color_name"), DROPDOWNS["colors"], "White")
                                 cmap = match_value_to_list(dc.get("color_map"), DROPDOWNS["amazon_color_maps"], COLOR_MAPPER.get(cname, "White"))
                                 new_temp_colors.append({"color_name": cname, "color_map": cmap, "images": ""})
+                                st.session_state[f"cname_{idx_c}"] = cname
+                                st.session_state[f"cmap_{idx_c}"] = cmap
+                                st.session_state[f"cimg_{idx_c}"] = ""
                             st.session_state["temp_colors"] = new_temp_colors
 
-                        st.toast("✅ AI Prefill Complete! Check the tabs below.", icon="🪄")
+                        st.toast("✅ AI Prefilled Core Attributes + Amazon & Myntra Template Tabs!", icon="🪄")
                         st.rerun()
                     except Exception as e:
                         st.error(f"AI Analysis Error: {e}")
@@ -657,286 +971,256 @@ if st.session_state.get("show_add_modal", False) or st.session_state.get("edit_p
                 for idx, (iname, iobj) in enumerate(imgs_preview[:6]):
                     p_cols[idx].image(iobj, caption=iname, use_container_width=True)
 
-    # Initialize temp_colors if needed
-    if "temp_colors" not in st.session_state or (is_edit and st.session_state.get("loaded_edit_key") != edit_key):
-        if is_edit:
-            st.session_state["temp_colors"] = [
-                {
-                    "color_name": c.get("color_name", "White"),
-                    "color_map": c.get("color_map", "White"),
-                    "images": "\n".join(c.get("images", [])),
-                }
-                for c in curr_data.get("color_variants", [])
-            ]
-            st.session_state["loaded_edit_key"] = edit_key
-        else:
-            st.session_state["temp_colors"] = [{"color_name": "White", "color_map": "White", "images": ""}]
-            st.session_state["loaded_edit_key"] = None
-
     # --------------------------------------------------------------------------
-    # MULTI-TAB ADD/EDIT FORM (CORE + ALL AMAZON FIELDS + ALL MYNTRA FIELDS)
+    # LIVE REACTIVE TABS (ONE-WAY CASCADE: TAB 1 -> TAB 2 & TAB 3)
     # --------------------------------------------------------------------------
-    with st.form("product_form"):
-        tab_core, tab_amz_all, tab_myn_all = st.tabs([
-            "🏷️ 1. Core Attributes & Colorways",
-            f"📦 2. All Amazon Template Fields ({len(amz_schema)})",
-            f"👗 3. All Myntra Template Fields ({len(myn_schema)})",
-        ])
+    tab_core, tab_amz_all, tab_myn_all = st.tabs([
+        "🏷️ 1. Core Attributes & Colorways (Auto-Updates Amazon & Myntra)",
+        f"📦 2. All Amazon Template Fields ({len(amz_schema)})",
+        f"👗 3. All Myntra Template Fields ({len(myn_schema)})",
+    ])
 
-        with tab_core:
-            f1, f2, f3 = st.columns(3)
-            with f1:
-                st.markdown("### 🏷️ Base Identifiers")
-                d_code = st.text_input("Design Code / Model Name*", value=curr_data.get("design_code", "NewStyle"))
-                t_core = st.text_input("Core Title (Without Brand)*", value=curr_data.get("title_core", "Floral Cotton Embroidered Kurta Set with Pants"))
+    with tab_core:
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            st.markdown("### 🏷️ Base Identifiers")
+            st.text_input("Design Code / Model Name*", key="core_design_code", on_change=on_core_field_change, args=("design_code",))
+            st.text_input("Core Title (Without Brand)*", key="core_title_core", on_change=on_core_field_change, args=("title_core",))
 
-                fab_def = curr_data.get("fabric", "Pure Cotton")
-                fab_idx = get_best_dropdown_index(fab_def, DROPDOWNS["fabrics"])
-                fab_choice = st.selectbox("Fabric*", DROPDOWNS["fabrics"], index=max(0, fab_idx - 1))
-                fab = st.text_input("Type Custom Fabric", value=fab_def) if fab_choice == "Other / Custom..." else fab_choice
+            st.selectbox("Fabric*", DROPDOWNS["fabrics"], key="core_fabric_sel", on_change=on_core_field_change, args=("fabric",))
+            if st.session_state.get("core_fabric_sel") == "Other / Custom...":
+                st.text_input("Type Custom Fabric", key="core_fabric_cust", on_change=on_core_field_change, args=("fabric",))
 
-                pat_def = curr_data.get("top_pattern", "Embroidered")
-                pat_idx = get_best_dropdown_index(pat_def, DROPDOWNS["top_patterns"])
-                pat_choice = st.selectbox("Pattern / Work*", DROPDOWNS["top_patterns"], index=max(0, pat_idx - 1))
-                pat = st.text_input("Type Custom Pattern", value=pat_def) if pat_choice == "Other / Custom..." else pat_choice
+            st.selectbox("Pattern / Work*", DROPDOWNS["top_patterns"], key="core_pattern_sel", on_change=on_core_field_change, args=("top_pattern",))
+            if st.session_state.get("core_pattern_sel") == "Other / Custom...":
+                st.text_input("Type Custom Pattern", key="core_pattern_cust", on_change=on_core_field_change, args=("top_pattern",))
 
-                prt_def = curr_data.get("print_type", "Floral")
-                prt_idx = get_best_dropdown_index(prt_def, DROPDOWNS["print_types"])
-                prt_choice = st.selectbox("Print Type*", DROPDOWNS["print_types"], index=max(0, prt_idx - 1))
-                prt = st.text_input("Type Custom Print", value=prt_def) if prt_choice == "Other / Custom..." else prt_choice
+            st.selectbox("Print Type*", DROPDOWNS["print_types"], key="core_print_sel", on_change=on_core_field_change, args=("print_type",))
+            if st.session_state.get("core_print_sel") == "Other / Custom...":
+                st.text_input("Type Custom Print", key="core_print_cust", on_change=on_core_field_change, args=("print_type",))
 
-            with f2:
-                st.markdown("### ✂️ Cut & Styling")
-                nck_def = curr_data.get("neck", "V-Neck")
-                nck_idx = get_best_dropdown_index(nck_def, DROPDOWNS["neck_styles"])
-                nck_choice = st.selectbox("Neck Type*", DROPDOWNS["neck_styles"], index=max(0, nck_idx - 1))
-                nck = st.text_input("Type Custom Neck", value=nck_def) if nck_choice == "Other / Custom..." else nck_choice
+        with f2:
+            st.markdown("### ✂️ Cut & Styling")
+            st.selectbox("Neck Type*", DROPDOWNS["neck_styles"], key="core_neck_sel", on_change=on_core_field_change, args=("neck",))
+            if st.session_state.get("core_neck_sel") == "Other / Custom...":
+                st.text_input("Type Custom Neck", key="core_neck_cust", on_change=on_core_field_change, args=("neck",))
 
-                slv_def = curr_data.get("sleeve_length", "Three-Quarter Sleeves")
-                slv_idx = get_best_dropdown_index(slv_def, DROPDOWNS["sleeve_lengths"])
-                slv_choice = st.selectbox("Sleeve Length*", DROPDOWNS["sleeve_lengths"], index=max(0, slv_idx - 1))
-                slv = st.text_input("Type Custom Sleeve", value=slv_def) if slv_choice == "Other / Custom..." else slv_choice
+            st.selectbox("Sleeve Length*", DROPDOWNS["sleeve_lengths"], key="core_sleeve_sel", on_change=on_core_field_change, args=("sleeve_length",))
+            if st.session_state.get("core_sleeve_sel") == "Other / Custom...":
+                st.text_input("Type Custom Sleeve", key="core_sleeve_cust", on_change=on_core_field_change, args=("sleeve_length",))
 
-                shp_def = curr_data.get("shape", "Straight")
-                shp_idx = get_best_dropdown_index(shp_def, DROPDOWNS["shapes"])
-                shp_choice = st.selectbox("Kurta Shape / Fit*", DROPDOWNS["shapes"], index=max(0, shp_idx - 1))
-                shp = st.text_input("Type Custom Shape", value=shp_def) if shp_choice == "Other / Custom..." else shp_choice
+            st.selectbox("Kurta Shape / Fit*", DROPDOWNS["shapes"], key="core_shape_sel", on_change=on_core_field_change, args=("shape",))
+            if st.session_state.get("core_shape_sel") == "Other / Custom...":
+                st.text_input("Type Custom Shape", key="core_shape_cust", on_change=on_core_field_change, args=("shape",))
 
-                len_def = curr_data.get("top_length", "Knee Length")
-                len_idx = get_best_dropdown_index(len_def, DROPDOWNS["top_lengths"])
-                len_choice = st.selectbox("Kurta / Top Length*", DROPDOWNS["top_lengths"], index=max(0, len_idx - 1))
-                top_len_val = st.text_input("Type Custom Length", value=len_def) if len_choice == "Other / Custom..." else len_choice
+            st.selectbox("Kurta / Top Length*", DROPDOWNS["top_lengths"], key="core_length_sel", on_change=on_core_field_change, args=("top_length",))
+            if st.session_state.get("core_length_sel") == "Other / Custom...":
+                st.text_input("Type Custom Length", key="core_length_cust", on_change=on_core_field_change, args=("top_length",))
 
-                wev_def = curr_data.get("weave", "Machine Weave")
-                wev_idx = get_best_dropdown_index(wev_def, DROPDOWNS["weave_types"])
-                wev_choice = st.selectbox("Weave Type*", DROPDOWNS["weave_types"], index=max(0, wev_idx - 1))
-                wev = st.text_input("Type Custom Weave", value=wev_def) if wev_choice == "Other / Custom..." else wev_choice
+            st.selectbox("Weave Type*", DROPDOWNS["weave_types"], key="core_weave_sel", on_change=on_core_field_change, args=("weave",))
+            if st.session_state.get("core_weave_sel") == "Other / Custom...":
+                st.text_input("Type Custom Weave", key="core_weave_cust", on_change=on_core_field_change, args=("weave",))
 
-                wsh_def = curr_data.get("wash_care", "Dry Clean")
-                wsh_idx = get_best_dropdown_index(wsh_def, DROPDOWNS["wash_cares"])
-                wsh_choice = st.selectbox("Wash Care*", DROPDOWNS["wash_cares"], index=max(0, wsh_idx - 1))
-                wsh = st.text_input("Type Custom Wash Care", value=wsh_def) if wsh_choice == "Other / Custom..." else wsh_choice
+            st.selectbox("Wash Care*", DROPDOWNS["wash_cares"], key="core_wash_sel", on_change=on_core_field_change, args=("wash_care",))
+            if st.session_state.get("core_wash_sel") == "Other / Custom...":
+                st.text_input("Type Custom Wash Care", key="core_wash_cust", on_change=on_core_field_change, args=("wash_care",))
 
-                occ_def = curr_data.get("occasion", "Festive")
-                occ_idx = get_best_dropdown_index(occ_def, DROPDOWNS["occasions"])
-                occ_choice = st.selectbox("Occasion*", DROPDOWNS["occasions"], index=max(0, occ_idx - 1))
-                occ = st.text_input("Type Custom Occasion", value=occ_def) if occ_choice == "Other / Custom..." else occ_choice
+            st.selectbox("Occasion*", DROPDOWNS["occasions"], key="core_occ_sel", on_change=on_core_field_change, args=("occasion",))
+            if st.session_state.get("core_occ_sel") == "Other / Custom...":
+                st.text_input("Type Custom Occasion", key="core_occ_cust", on_change=on_core_field_change, args=("occasion",))
 
-            with f3:
-                st.markdown("### 💰 Pricing & Standard Curve")
-                mrp_val = st.number_input("MRP (₹)*", value=int(curr_data.get("mrp", 3999)), step=100)
-                sp_val = st.number_input("Selling Price (₹)*", value=int(curr_data.get("selling_price", 1499)), step=50)
-                hsn_val = st.text_input("HSN Code*", value=str(curr_data.get("hsn", "62114210")))
+        with f3:
+            st.markdown("### 💰 Pricing & Standard Curve")
+            st.number_input("MRP (₹)*", step=100, key="core_mrp", on_change=on_core_field_change, args=("mrp",))
+            st.number_input("Selling Price (₹)*", step=50, key="core_sp", on_change=on_core_field_change, args=("selling_price",))
+            st.text_input("HSN Code*", key="core_hsn", on_change=on_core_field_change, args=("hsn",))
 
-                pkg_def = curr_data.get("package_contains", "1 Kurta, 1 Pant")
-                pkg_idx = get_best_dropdown_index(pkg_def, DROPDOWNS["packages"])
-                pkg_choice = st.selectbox("Package Contains*", DROPDOWNS["packages"], index=max(0, pkg_idx - 1))
-                pkg = st.text_input("Type Custom Package", value=pkg_def) if pkg_choice == "Other / Custom..." else pkg_choice
+            st.selectbox("Package Contains*", DROPDOWNS["packages"], key="core_pkg_sel", on_change=on_core_field_change, args=("package_contains",))
+            if st.session_state.get("core_pkg_sel") == "Other / Custom...":
+                st.text_input("Type Custom Package", key="core_pkg_cust", on_change=on_core_field_change, args=("package_contains",))
 
-                valid_sz_opts = ["XS", "S", "M", "L", "XL", "2XL", "3XL"]
-                default_sizes = [s for s in curr_data.get("sizes", ["S", "M", "L", "XL", "2XL"]) if s in valid_sz_opts]
-                sz_list = st.multiselect(
-                    "Available Sizes*",
-                    valid_sz_opts,
-                    default=default_sizes or ["M", "L", "XL", "2XL"],
-                )
-
-            st.markdown("---")
-            st.markdown("### 🎨 Color Variants & Image Sets")
-            st.caption("AI auto-populates all detected colors from your zip/rar photos. You can also edit or add more below.")
-
-            updated_color_variants = []
-            for idx, cv in enumerate(st.session_state["temp_colors"]):
-                st.markdown(f"**Colorway #{idx + 1}**")
-                c_col1, c_col2, c_col3 = st.columns([1.5, 1.5, 3])
-                with c_col1:
-                    cur_c = cv.get("color_name", "White")
-                    c_idx = get_best_dropdown_index(cur_c, DROPDOWNS["colors"])
-                    col_name_sel = st.selectbox(f"Color Name #{idx + 1}", DROPDOWNS["colors"], index=max(0, c_idx - 1), key=f"cname_{idx}")
-                    if col_name_sel == "Other / Custom...":
-                        col_name = st.text_input(f"Type Custom Color #{idx + 1}", value=cur_c if cur_c != "Other / Custom..." else "", key=f"ccustom_{idx}")
-                    else:
-                        col_name = col_name_sel
-
-                with c_col2:
-                    suggested_map = COLOR_MAPPER.get(col_name_sel, cv.get("color_map", "Multicolor"))
-                    map_idx = get_best_dropdown_index(suggested_map, DROPDOWNS["amazon_color_maps"])
-                    col_map_choice = st.selectbox(
-                        f"Amazon Filter Bucket #{idx + 1}",
-                        DROPDOWNS["amazon_color_maps"],
-                        index=max(0, map_idx - 1),
-                        key=f"cmap_{idx}",
-                    )
-
-                with c_col3:
-                    img_text = st.text_area(f"Images for {col_name} (1 URL per line)", value=cv["images"], key=f"cimg_{idx}", height=70)
-
-                updated_color_variants.append(
-                    {
-                        "color_name": col_name,
-                        "color_map": col_map_choice,
-                        "images": [u.strip() for u in img_text.splitlines() if u.strip()],
-                    }
-                )
-
-            st.markdown("---")
-            desc = st.text_area(
-                "Product Description",
-                value=curr_data.get(
-                    "description",
-                    "Crafted from pure cotton, this set offers incredible breathability and an exceptionally soft touch against your skin so you stay completely comfortable all day.",
-                ),
-                height=120,
+            st.multiselect(
+                "Available Sizes*",
+                ["XS", "S", "M", "L", "XL", "2XL", "3XL"],
+                key="core_sizes",
             )
 
-        # ----------------------------------------------------------------------
-        # TAB 2: ALL AMAZON TEMPLATE FIELDS (GRANULAR CONTROL)
-        # ----------------------------------------------------------------------
-        amz_override_inputs = {}
-        with tab_amz_all:
-            if not amz_schema:
-                st.info("👈 Upload your **Amazon Master Template (.xlsm / .xlsx)** in the left sidebar to unlock granular control over every Amazon column and dropdown.")
-            else:
-                st.caption("Every column from your Amazon template is shown below. Dropdowns are pulled directly from the template, and AI pre-selects the closest matching value.")
-                saved_amz_ovr = curr_data.get("amazon_overrides", {})
-                amz_grid = st.columns(3)
-                for idx, (fname, fmeta) in enumerate(amz_schema.items()):
-                    col_ui = amz_grid[idx % 3]
-                    cur_val = str(saved_amz_ovr.get(fname, "")).strip()
-                    opts = fmeta.get("options", [])
-                    if opts:
-                        full_opts = [""] + opts
-                        best_idx = get_best_dropdown_index(cur_val, opts)
-                        amz_override_inputs[fname] = col_ui.selectbox(
-                            f"📦 {fname}",
-                            options=full_opts,
-                            index=best_idx,
-                            key=f"amz_gran_{fname}",
-                        )
-                    else:
-                        amz_override_inputs[fname] = col_ui.text_input(
-                            f"📦 {fname}",
-                            value=cur_val,
-                            key=f"amz_gran_{fname}",
-                        )
+        st.markdown("---")
+        st.markdown("### 🎨 Color Variants & Image Sets")
+        updated_color_variants = []
+        for idx, cv in enumerate(st.session_state.get("temp_colors", [])):
+            st.markdown(f"**Colorway #{idx + 1}**")
+            c_col1, c_col2, c_col3 = st.columns([1.5, 1.5, 3])
+            with c_col1:
+                if f"cname_{idx}" not in st.session_state:
+                    st.session_state[f"cname_{idx}"] = match_value_to_list(cv.get("color_name", "White"), DROPDOWNS["colors"], "White")
+                col_name_sel = st.selectbox(f"Color Name #{idx + 1}", DROPDOWNS["colors"], key=f"cname_{idx}")
+                if col_name_sel == "Other / Custom...":
+                    col_name = st.text_input(f"Type Custom Color #{idx + 1}", key=f"ccustom_{idx}")
+                else:
+                    col_name = col_name_sel
 
-        # ----------------------------------------------------------------------
-        # TAB 3: ALL MYNTRA TEMPLATE FIELDS (GRANULAR CONTROL)
-        # ----------------------------------------------------------------------
-        myn_override_inputs = {}
-        with tab_myn_all:
-            if not myn_schema:
-                st.info("👈 Upload your **Myntra Master Template (.xlsx)** in the left sidebar to unlock granular control over every Myntra column and dropdown.")
-            else:
-                st.caption("Every column from your Myntra template is shown below. Dropdowns are pulled directly from the template, and AI pre-selects the closest matching value.")
-                saved_myn_ovr = curr_data.get("myntra_overrides", {})
-                myn_grid = st.columns(3)
-                for idx, (fname, fmeta) in enumerate(myn_schema.items()):
-                    col_ui = myn_grid[idx % 3]
-                    cur_val = str(saved_myn_ovr.get(fname, "")).strip()
-                    opts = fmeta.get("options", [])
-                    if opts:
-                        full_opts = [""] + opts
-                        best_idx = get_best_dropdown_index(cur_val, opts)
-                        myn_override_inputs[fname] = col_ui.selectbox(
-                            f"👗 {fname}",
-                            options=full_opts,
-                            index=best_idx,
-                            key=f"myn_gran_{fname}",
-                        )
-                    else:
-                        myn_override_inputs[fname] = col_ui.text_input(
-                            f"👗 {fname}",
-                            value=cur_val,
-                            key=f"myn_gran_{fname}",
-                        )
+            with c_col2:
+                suggested_map = COLOR_MAPPER.get(col_name_sel, cv.get("color_map", "Multicolor"))
+                if f"cmap_{idx}" not in st.session_state:
+                    st.session_state[f"cmap_{idx}"] = match_value_to_list(suggested_map, DROPDOWNS["amazon_color_maps"], "White")
+                col_map_choice = st.selectbox(
+                    f"Amazon Filter Bucket #{idx + 1}",
+                    DROPDOWNS["amazon_color_maps"],
+                    key=f"cmap_{idx}",
+                )
 
-        save_c1, save_c2 = st.columns([1, 4])
-        with save_c1:
-            save_btn = st.form_submit_button("💾 Save Product", type="primary", use_container_width=True)
-        with save_c2:
-            cancel_btn = st.form_submit_button("Cancel", use_container_width=False)
+            with c_col3:
+                if f"cimg_{idx}" not in st.session_state:
+                    st.session_state[f"cimg_{idx}"] = cv.get("images", "")
+                img_text = st.text_area(f"Images for {col_name} (1 URL per line)", key=f"cimg_{idx}", height=70)
 
-        if cancel_btn:
-            st.session_state["show_add_modal"] = False
-            st.session_state["edit_product_key"] = None
-            st.session_state["ai_draft"] = {}
-            st.rerun()
+            updated_color_variants.append(
+                {
+                    "color_name": col_name,
+                    "color_map": col_map_choice,
+                    "images": [u.strip() for u in str(img_text).splitlines() if u.strip()],
+                }
+            )
 
-        if save_btn:
-            std_measurements = {
-                "XS": {"Across Shoulder": 13.5, "Bust": 34.0, "Chest": 34.0, "Front Length": 29.0, "Hips": 32.0, "Waist": 28.0, "Inseam Length": 25.0},
-                "S": {"Across Shoulder": 14.0, "Bust": 36.0, "Chest": 36.0, "Front Length": 29.0, "Hips": 34.0, "Waist": 30.0, "Inseam Length": 25.0},
-                "M": {"Across Shoulder": 14.5, "Bust": 38.0, "Chest": 38.0, "Front Length": 29.0, "Hips": 36.0, "Waist": 32.0, "Inseam Length": 24.8},
-                "L": {"Across Shoulder": 15.0, "Bust": 40.0, "Chest": 40.0, "Front Length": 29.0, "Hips": 38.0, "Waist": 34.0, "Inseam Length": 24.3},
-                "XL": {"Across Shoulder": 15.5, "Bust": 42.0, "Chest": 42.0, "Front Length": 29.0, "Hips": 40.0, "Waist": 36.0, "Inseam Length": 23.8},
-                "2XL": {"Across Shoulder": 16.0, "Bust": 44.0, "Chest": 44.0, "Front Length": 29.0, "Hips": 42.0, "Waist": 38.0, "Inseam Length": 22.0},
-                "3XL": {"Across Shoulder": 16.5, "Bust": 46.0, "Chest": 46.0, "Front Length": 29.0, "Hips": 44.0, "Waist": 40.0, "Inseam Length": 22.0},
-            }
+        col_btn1, col_btn2 = st.columns([1, 4])
+        with col_btn1:
+            if st.button("➕ Add Another Color Variant"):
+                new_i = len(st.session_state["temp_colors"])
+                st.session_state["temp_colors"].append({"color_name": "White", "color_map": "White", "images": ""})
+                st.session_state[f"cname_{new_i}"] = "White"
+                st.session_state[f"cmap_{new_i}"] = "White"
+                st.session_state[f"cimg_{new_i}"] = ""
+                st.rerun()
+        with col_btn2:
+            if len(st.session_state.get("temp_colors", [])) > 1 and st.button("➖ Remove Last Color Variant"):
+                st.session_state["temp_colors"].pop()
+                st.rerun()
 
-            clean_amz_ovr = {k: v for k, v in amz_override_inputs.items() if str(v).strip() != ""} if amz_schema else curr_data.get("amazon_overrides", {})
-            clean_myn_ovr = {k: v for k, v in myn_override_inputs.items() if str(v).strip() != ""} if myn_schema else curr_data.get("myntra_overrides", {})
+        st.markdown("---")
+        st.text_area(
+            "Product Description",
+            key="core_desc",
+            height=120,
+            on_change=on_core_field_change,
+            args=("description",),
+        )
 
-            db[d_code] = {
-                "design_code": d_code,
-                "title_core": t_core,
-                "fabric": fab,
-                "top_pattern": pat,
-                "print_type": prt,
-                "neck": nck,
-                "sleeve_length": slv,
-                "shape": shp,
-                "top_length": top_len_val,
-                "weave": wev,
-                "wash_care": wsh,
-                "occasion": occ,
-                "mrp": mrp_val,
-                "selling_price": sp_val,
-                "hsn": hsn_val,
-                "sizes": sz_list,
-                "package_contains": pkg,
-                "net_qty": 1,
-                "description": desc,
-                "measurements": {sz: std_measurements.get(sz, {}) for sz in sz_list},
-                "color_variants": updated_color_variants,
-                "amazon_overrides": clean_amz_ovr,
-                "myntra_overrides": clean_myn_ovr,
-            }
-            save_db(db)
-            st.session_state["show_add_modal"] = False
-            st.session_state["edit_product_key"] = None
-            st.session_state["ai_draft"] = {}
-            st.rerun()
+    # --------------------------------------------------------------------------
+    # TAB 2: ALL AMAZON TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
+    # --------------------------------------------------------------------------
+    amz_override_inputs = {}
+    with tab_amz_all:
+        if not amz_schema:
+            st.info("👈 Upload your **Amazon Master Template (.xlsm / .xlsx)** in the left sidebar to unlock granular control over every Amazon column and dropdown.")
+        else:
+            st.caption("Every column from your Amazon template is prefilled below from AI + Core Attributes. Editing Core Attributes updates these automatically, while edits you make here stay strictly in Amazon!")
+            amz_grid = st.columns(3)
+            for idx, (fname, fmeta) in enumerate(amz_schema.items()):
+                col_ui = amz_grid[idx % 3]
+                w_key = f"amz_gran_{fname}"
+                opts = fmeta.get("options", [])
+                if opts:
+                    full_opts = [""] + opts
+                    if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
+                        st.session_state[w_key] = ""
+                    amz_override_inputs[fname] = col_ui.selectbox(
+                        f"📦 {fname}",
+                        options=full_opts,
+                        key=w_key,
+                    )
+                else:
+                    if w_key not in st.session_state:
+                        st.session_state[w_key] = ""
+                    amz_override_inputs[fname] = col_ui.text_input(
+                        f"📦 {fname}",
+                        key=w_key,
+                    )
 
-    col_btn1, col_btn2 = st.columns([1, 4])
-    with col_btn1:
-        if st.button("➕ Add Another Color Variant"):
-            st.session_state["temp_colors"].append({"color_name": "White", "color_map": "White", "images": ""})
-            st.rerun()
-    with col_btn2:
-        if len(st.session_state["temp_colors"]) > 1 and st.button("➖ Remove Last Color Variant"):
-            st.session_state["temp_colors"].pop()
-            st.rerun()
+    # --------------------------------------------------------------------------
+    # TAB 3: ALL MYNTRA TEMPLATE FIELDS (INDEPENDENT ONE-WAY TARGET)
+    # --------------------------------------------------------------------------
+    myn_override_inputs = {}
+    with tab_myn_all:
+        if not myn_schema:
+            st.info("👈 Upload your **Myntra Master Template (.xlsx)** in the left sidebar to unlock granular control over every Myntra column and dropdown.")
+        else:
+            st.caption("Every column from your Myntra template is prefilled below from AI + Core Attributes. Editing Core Attributes updates these automatically, while edits you make here stay strictly in Myntra!")
+            myn_grid = st.columns(3)
+            for idx, (fname, fmeta) in enumerate(myn_schema.items()):
+                col_ui = myn_grid[idx % 3]
+                w_key = f"myn_gran_{fname}"
+                opts = fmeta.get("options", [])
+                if opts:
+                    full_opts = [""] + opts
+                    if w_key not in st.session_state or st.session_state[w_key] not in full_opts:
+                        st.session_state[w_key] = ""
+                    myn_override_inputs[fname] = col_ui.selectbox(
+                        f"👗 {fname}",
+                        options=full_opts,
+                        key=w_key,
+                    )
+                else:
+                    if w_key not in st.session_state:
+                        st.session_state[w_key] = ""
+                    myn_override_inputs[fname] = col_ui.text_input(
+                        f"👗 {fname}",
+                        key=w_key,
+                    )
+
+    st.markdown("---")
+    save_c1, save_c2 = st.columns([1, 4])
+    with save_c1:
+        save_btn = st.button("💾 Save Product to Catalog", type="primary", use_container_width=True)
+    with save_c2:
+        cancel_btn = st.button("Cancel", use_container_width=False)
+
+    if cancel_btn:
+        st.session_state["show_add_modal"] = False
+        st.session_state["edit_product_key"] = None
+        st.session_state["loaded_edit_key"] = None
+        st.rerun()
+
+    if save_btn:
+        core_final = get_current_core_values()
+        d_code = core_final["design_code"]
+        sz_list = core_final["sizes"]
+
+        std_measurements = {
+            "XS": {"Across Shoulder": 13.5, "Bust": 34.0, "Chest": 34.0, "Front Length": 29.0, "Hips": 32.0, "Waist": 28.0, "Inseam Length": 25.0},
+            "S": {"Across Shoulder": 14.0, "Bust": 36.0, "Chest": 36.0, "Front Length": 29.0, "Hips": 34.0, "Waist": 30.0, "Inseam Length": 25.0},
+            "M": {"Across Shoulder": 14.5, "Bust": 38.0, "Chest": 38.0, "Front Length": 29.0, "Hips": 36.0, "Waist": 32.0, "Inseam Length": 24.8},
+            "L": {"Across Shoulder": 15.0, "Bust": 40.0, "Chest": 40.0, "Front Length": 29.0, "Hips": 38.0, "Waist": 34.0, "Inseam Length": 24.3},
+            "XL": {"Across Shoulder": 15.5, "Bust": 42.0, "Chest": 42.0, "Front Length": 29.0, "Hips": 40.0, "Waist": 36.0, "Inseam Length": 23.8},
+            "2XL": {"Across Shoulder": 16.0, "Bust": 44.0, "Chest": 44.0, "Front Length": 29.0, "Hips": 42.0, "Waist": 38.0, "Inseam Length": 22.0},
+            "3XL": {"Across Shoulder": 16.5, "Bust": 46.0, "Chest": 46.0, "Front Length": 29.0, "Hips": 44.0, "Waist": 40.0, "Inseam Length": 22.0},
+        }
+
+        existing_amz_ovr = db.get(d_code, {}).get("amazon_overrides", {})
+        existing_myn_ovr = db.get(d_code, {}).get("myntra_overrides", {})
+
+        clean_amz_ovr = (
+            {k: v for k, v in amz_override_inputs.items() if str(v).strip() != ""}
+            if amz_schema else existing_amz_ovr
+        )
+        clean_myn_ovr = (
+            {k: v for k, v in myn_override_inputs.items() if str(v).strip() != ""}
+            if myn_schema else existing_myn_ovr
+        )
+
+        db[d_code] = {
+            **core_final,
+            "net_qty": 1,
+            "measurements": {sz: std_measurements.get(sz, {}) for sz in sz_list},
+            "color_variants": updated_color_variants,
+            "amazon_overrides": clean_amz_ovr,
+            "myntra_overrides": clean_myn_ovr,
+        }
+        save_db(db)
+        st.session_state["show_add_modal"] = False
+        st.session_state["edit_product_key"] = None
+        st.session_state["loaded_edit_key"] = None
+        st.rerun()
 
 # ==============================================================================
 # 2. CATALOG TABLE
@@ -994,7 +1278,7 @@ else:
         if st.button(f"✏️ Edit Selected ({selected_designs[0]})"):
             st.session_state["edit_product_key"] = selected_designs[0]
             st.session_state["show_add_modal"] = False
-            st.session_state["ai_draft"] = {}
+            st.session_state["loaded_edit_key"] = None
             st.rerun()
 
     st.markdown("---")
@@ -1037,7 +1321,6 @@ else:
             )
 
         if st.button(f"⚡ Generate {marketplace} Bulk Upload File for {len(selected_designs)} Product(s)", type="primary", use_container_width=True):
-            # Fallback to sidebar master template if not uploaded in the bottom box
             active_tpl = uploaded_template or (tpl_myn_sidebar if marketplace == "Myntra" else tpl_amz_sidebar)
 
             if not active_tpl:
@@ -1093,21 +1376,15 @@ else:
 
                 current_row = start_row
                 group_id_counter = 1
-                curr_year = datetime.datetime.now().year
 
                 for d_name in selected_designs:
                     prod = db[d_name]
                     colorways = prod.get("color_variants", [{"color_name": "White", "color_map": "White", "images": []}])
                     amz_ovr = prod.get("amazon_overrides", {})
                     myn_ovr = prod.get("myntra_overrides", {})
-
-                    user_top_len = prod.get("top_length", "Knee Length")
-                    len_tuple = LENGTH_MAPPER.get(user_top_len, (user_top_len, user_top_len))
-                    myntra_top_len_val = len_tuple[0]
-                    amazon_item_len_val = len_tuple[1]
+                    amz_base_defaults, myn_base_defaults = compute_baseline_template_maps(prod)
 
                     raw_fabric = prod.get("fabric", "Pure Cotton")
-                    amz_fabric_val = FABRIC_MAPPER.get(raw_fabric, "Cotton")
 
                     for brand in selected_brands:
                         brand_email = "pervas0007@gmail.com" if brand == "PERVAS" else "perabin32544@gmail.com"
@@ -1120,59 +1397,21 @@ else:
                             parent_title = f"{brand} Women's {raw_fabric} {prod.get('top_pattern', 'Printed')} Kurta Pant Set ({prod.get('design_code')})"
 
                             p_row = {
+                                **amz_base_defaults,
+                                **amz_ovr,
                                 "Status": "Active",
                                 "Title": parent_title,
                                 "SKU": parent_sku,
                                 "Product Type": category_val.upper(),
-                                "Listing Action": "Create or Replace (Full Update)",
                                 "Parentage Level": "Parent",
+                                "Parent SKU": "",
                                 "Variation Theme Name": "SIZE/COLOR",
                                 "Item Name": parent_title,
                                 "Brand Name": brand,
-                                "Product Id Type": "GTIN Exempt",
-                                "Model Name": prod.get("design_code"),
                                 "Manufacturer": brand_email,
-                                "Product Description": prod.get("description") or AMAZON_EXACT_DESCRIPTION,
-                                "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
-                                "Lifestyle": "Casual",
-                                "Department Name": "Womens",
-                                "Target Gender": "Female",
-                                "Age Range Description": "Adult",
-                                "Fabric Type": amz_fabric_val,
-                                "Material": amz_fabric_val,
-                                "Item Type Name": category_val.upper(),
-                                "Item Length Description": amazon_item_len_val,
-                                "Occasion": prod.get("occasion", "Festive"),
-                                "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
                                 "Manufacturer Contact Information": brand_email,
                                 "Packer Contact Information": brand_email,
-                                "Design Name": prod.get("top_pattern", "Embroidered"),
-                                "Neck Style": prod.get("neck", "V-Neck"),
-                                "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
-                                "Weave Method": "Powerloom",
-                                "Item Weight": 450.0,
-                                "Item Weight Unit": "Grams",
-                                "Country of Origin": "India",
-                                "Skip Offer": "No",
-                                "Item Condition": "New",
-                                "Offer Condition Note": "New",
-                                "Number of Items": 1,
-                                "Item Length Longer Edge": 46.0,
-                                "Item Length Unit": "Centimeters",
-                                "Package Length": 25.0,
-                                "Package Length Unit": "Centimeters",
-                                "Package Width": 22.0,
-                                "Package Width Unit": "Centimeters",
-                                "Package Height": 3.0,
-                                "Package Height Unit": "Centimeters",
-                                "Package Weight": 450.0,
-                                "Package Weight Unit": "Grams",
                             }
-                            # Apply any granular Amazon overrides (without clobbering Parentage/SKU)
-                            protected_parent_keys = {"SKU", "Parentage Level", "Parent SKU", "Brand Name"}
-                            for ok, ov in amz_ovr.items():
-                                if ok not in protected_parent_keys and str(ov).strip():
-                                    p_row[ok] = ov
 
                             for col_name, val in p_row.items():
                                 write_cell(current_row, col_name, val)
@@ -1217,54 +1456,21 @@ else:
                                     )
 
                                     m_row = {
+                                        **myn_base_defaults,
+                                        **myn_ovr,
                                         "styleGroupId": group_id_counter,
                                         "vendorSkuCode": sku,
                                         "vendorArticleNumber": art_num,
                                         "vendorArticleName": display_name,
+                                        "productDisplayName": display_name,
                                         "brand": brand,
-                                        "Manufacturer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
-                                        "Packer Name and Address with Pincode": "Pervas, 2087, The Palladium Mall, Yogi Chowk, Surat, Gujarat - 395010",
-                                        "Country Of Origin": "India",
                                         "articleType": category_val,
                                         "Brand Size": myntra_size,
                                         "Standard Size": myntra_size,
-                                        "is Standard Size present on Label": "Yes",
                                         "Brand Colour (Remarks)": c_name,
-                                        "HSN": prod.get("hsn"),
-                                        "SKUCode": sku,
-                                        "MRP": prod.get("mrp"),
-                                        "ISP": prod.get("selling_price"),
-                                        "AgeGroup": "Adults-Women",
                                         "Prominent Colour": c_map,
-                                        "FashionType": "Fashion",
-                                        "Usage": "Casual",
-                                        "Year": curr_year,
-                                        "Product Details": prod.get("description"),
-                                        "styleNote": style_note_text,
-                                        "materialCareDescription": prod.get("wash_care", "Dry Clean Only"),
-                                        "productDisplayName": display_name,
-                                        "Top Fabric": raw_fabric,
-                                        "Top Pattern": prod.get("top_pattern"),
-                                        "Neck": prod.get("neck"),
-                                        "Sleeve Length": prod.get("sleeve_length"),
-                                        "Top Shape": prod.get("shape"),
-                                        "Top Length": myntra_top_len_val,
-                                        "Bottom Fabric": raw_fabric,
-                                        "Bottom Pattern": prod.get("top_pattern"),
-                                        "Bottom Closure": "NA",
-                                        "Waistband": "NA",
-                                        "Print or Pattern Type": prod.get("print_type"),
-                                        "Occasion": prod.get("occasion"),
-                                        "Weave Pattern": "Regular",
-                                        "Weave Type": prod.get("weave"),
-                                        "Wash Care": prod.get("wash_care"),
-                                        "Stitch": "Ready to Wear",
-                                        "Add-Ons": "NA",
-                                        "Number of Pockets": "NA",
-                                        "Number of Items": 1,
-                                        "Net Quantity Unit": "Piece",
-                                        "Package Contains": prod.get("package_contains"),
-                                        "Net Quantity": prod.get("net_qty"),
+                                        "SKUCode": sku,
+                                        "styleNote": myn_ovr.get("styleNote") or style_note_text,
                                         "Across Shoulder ( Inches )": m.get("Across Shoulder"),
                                         "Bust ( Inches )": m.get("Bust"),
                                         "Chest ( Inches )": m.get("Chest"),
@@ -1274,98 +1480,34 @@ else:
                                         "Inseam Length ( Inches )": m.get("Inseam Length"),
                                     }
 
-                                    # Apply granular Myntra overrides from Tab 3
-                                    protected_myn_keys = {"styleGroupId", "vendorSkuCode", "vendorArticleNumber", "brand", "Brand Size", "Standard Size", "Brand Colour (Remarks)", "Prominent Colour", "SKUCode"}
-                                    for ok, ov in myn_ovr.items():
-                                        if ok not in protected_myn_keys and str(ov).strip():
-                                            m_row[ok] = ov
-
                                     for col_name, val in m_row.items():
                                         write_cell(current_row, col_name, val)
 
                                 else:
-                                    # AMAZON CHILD ROW
                                     child_sku = f"{brand}-{prod.get('design_code')}-{c_name}-{sz}"
                                     parent_sku = f"{brand}-{prod.get('design_code')}-Parent"
                                     child_title = f"{brand} Women's {raw_fabric} Kurta Pant Set ({prod.get('design_code')} {c_name} {sz})"
 
                                     c_row = {
+                                        **amz_base_defaults,
+                                        **amz_ovr,
                                         "Status": "Active",
                                         "Title": child_title,
                                         "SKU": child_sku,
                                         "Product Type": category_val.upper(),
-                                        "Listing Action": "Create or Replace (Full Update)",
                                         "Parentage Level": "Child",
                                         "Parent SKU": parent_sku,
                                         "Variation Theme Name": "SIZE/COLOR",
                                         "Item Name": child_title,
                                         "Brand Name": brand,
-                                        "Product Id Type": "GTIN Exempt",
-                                        "Model Name": prod.get("design_code"),
-                                        "Part Number": prod.get("design_code"),
-                                        "Apparel Size System": "IN",
-                                        "Apparel Size Class": "Alpha",
                                         "Apparel Size Value": amz_size_val,
-                                        "Shirt Size System": "IN",
-                                        "Shirt Size Class": "Alpha",
                                         "Shirt Size Value": amz_size_val,
-                                        "Shirt Body Type": "Regular",
-                                        "Special Size": "Standard",
                                         "Color": c_name,
                                         "Color Map": c_map,
-                                        "Standard Price": prod.get("selling_price"),
-                                        "Maximum Retail Price": prod.get("mrp"),
-                                        "Your Price INR (Sell on Amazon, IN)": prod.get("selling_price"),
-                                        "Maximum Retail Price (Sell on Amazon, IN)": prod.get("mrp"),
-                                        "Product Description": prod.get("description") or AMAZON_EXACT_DESCRIPTION,
-                                        "Generic Keywords": "two piece suit set coord dress stylish co ord sets cord coords dresses a line neck ords long salwar trendy new printed latest design traditional suits ladies daily rayon festive kutis indian kutties v kurthi fashion mul weddings floral print",
-                                        "Lifestyle": "Casual",
-                                        "Style": prod.get("shape", "Straight"),
-                                        "Fit Type": "Regular",
-                                        "Department Name": "Womens",
-                                        "Target Gender": "Female",
-                                        "Age Range Description": "Adult",
-                                        "Fabric Type": amz_fabric_val,
-                                        "Material": amz_fabric_val,
-                                        "Pattern": prod.get("print_type", "Floral"),
-                                        "Item Type Name": category_val.upper(),
-                                        "Item Length Description": amazon_item_len_val,
-                                        "Occasion": prod.get("occasion", "Festive"),
-                                        "Care Instructions": prod.get("wash_care", "Dry Clean Only"),
                                         "Manufacturer": brand_email,
                                         "Manufacturer Contact Information": brand_email,
                                         "Packer Contact Information": brand_email,
-                                        "Design Name": prod.get("top_pattern", "Embroidered"),
-                                        "External Product Information Entity": "HSN Code",
-                                        "External Product Information": prod.get("hsn", "62114210"),
-                                        "Neck Style": prod.get("neck", "V-Neck"),
-                                        "Sleeve Length Description": "3/4 Sleeve" if "Three" in prod.get("sleeve_length", "") else prod.get("sleeve_length", "3/4 Sleeve"),
-                                        "Weave Method": "Powerloom",
-                                        "Item Weight": 450.0,
-                                        "Item Weight Unit": "Grams",
-                                        "Country of Origin": "India",
-                                        "Skip Offer": "No",
-                                        "Item Condition": "New",
-                                        "Offer Condition Note": "New",
-                                        "Fulfillment Channel Code (IN)": "AMAZON_IN",
-                                        "Number of Items": 1,
-                                        "Item Length Longer Edge": 46.0,
-                                        "Item Length Unit": "Centimeters",
-                                        "Package Length": 25.0,
-                                        "Package Length Unit": "Centimeters",
-                                        "Package Width": 22.0,
-                                        "Package Width Unit": "Centimeters",
-                                        "Package Height": 3.0,
-                                        "Package Height Unit": "Centimeters",
-                                        "Package Weight": 450.0,
-                                        "Package Weight Unit": "Grams",
                                     }
-
-                                    # Apply granular Amazon overrides from Tab 2
-                                    protected_child_keys = {"SKU", "Parentage Level", "Parent SKU", "Brand Name", "Apparel Size Value", "Shirt Size Value", "Color", "Color Map"}
-                                    for ok, ov in amz_ovr.items():
-                                        if ok not in protected_child_keys and str(ov).strip():
-                                            c_row[ok] = ov
 
                                     for col_name, val in c_row.items():
                                         write_cell(current_row, col_name, val)
