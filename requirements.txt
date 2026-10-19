@@ -3,3 +3,6 @@ openpyxl
 rapidfuzz
 pandas
 requests
+google-genai
+Pillow
+rarfile
